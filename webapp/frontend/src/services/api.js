@@ -1,0 +1,89 @@
+import axios from 'axios';
+
+const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
+
+const api = axios.create({
+  baseURL: API_URL,
+  headers: {
+    'Content-Type': 'application/json',
+  },
+});
+
+// API Service - All endpoints for the frontend
+export const apiService = {
+  // Health Check
+  getHealth: () => api.get('/health'),
+
+  // ===== STATISTICS ENDPOINTS (US-1, US-2, US-3) =====
+  
+  /**
+   * Get descriptive statistics (US-1: Performance Statistics)
+   * Returns: count, mean, std, min, 25%, 50%, 75%, max for delays, crowding, etc.
+   */
+  getDescribeStats: (params = {}) => api.get('/stats/describe', { params }),
+
+  /**
+   * Get delay boxplot visualization (US-2: Delay Patterns)
+   * Returns: path to PNG image showing delay distribution
+   */
+  getDelayBoxplot: (params = {}) => api.get('/stats/delay-boxplot', { params }),
+
+  /**
+   * Get daily train count data (US-3: Service Frequency)
+   * Returns: path to chart showing trains per day by company
+   */
+  getDayTrainCount: (params = {}) => api.get('/stats/day-train-count', { params }),
+
+  // ===== MAP ENDPOINTS (US-4) =====
+
+  /**
+   * Get train trajectories for interactive map (US-4: Interactive Map)
+   * Returns: path to HTML map or GeoJSON data with train paths
+   */
+  getTrajectories: (params = {}) => api.get('/map/trajectories', { params }),
+
+  /**
+   * Get station locations (US-4, US-9: Geography)
+   * Returns: GeoJSON with all stations and their coordinates
+   */
+  getStations: (params = {}) => api.get('/stations', { params }),
+
+  // ===== FUTURE ENDPOINTS (for filtering) =====
+
+  /**
+   * Get available companies for filtering (US-8)
+   * Can be extended to fetch from API if needed
+   */
+  getCompanies: () => {
+    // Hardcoded for now, can be moved to backend
+    return Promise.resolve({
+      data: [
+        { code: 'TRENITALIA_REG', label: 'Trenitalia Regional' },
+        { code: 'TRENITALIA_AV', label: 'Trenitalia High-Speed' },
+        { code: 'TRENORD', label: 'Trenord' },
+        { code: 'TPER', label: 'TPER' },
+      ],
+    });
+  },
+
+  /**
+   * Get available regions for filtering (US-9)
+   */
+  getRegions: () => {
+    return Promise.resolve({
+      data: [
+        'Lombardia',
+        'Emilia-Romagna',
+        'Piemonte',
+        'Veneto',
+        'Toscana',
+        'Lazio',
+        'Campania',
+        'Sicilia',
+        'Puglia',
+      ],
+    });
+  },
+};
+
+export default api;
