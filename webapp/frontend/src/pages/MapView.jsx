@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { apiService } from '../services/api';
+import Filters from '../components/Filters';
 import './MapView.css';
 
 /**
@@ -12,13 +13,24 @@ const MapView = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
+  const [filters, setFilters] = useState({});
+
   useEffect(() => {
     const fetchMapData = async () => {
       try {
         setLoading(true);
         
+        // Build query params from filters
+        const params = {
+          start_date: filters.startDate || undefined,
+          end_date: filters.endDate || undefined,
+          railway_companies: filters.companies?.join(',') || undefined,
+          regions: filters.regions?.join(',') || undefined,
+          station_query: filters.stationQuery || undefined,
+        };
+
         // Fetch trajectory map
-        const response = await apiService.getTrajectories();
+        const response = await apiService.getTrajectories(params);
         if (response.data.file_path) {
           setMapPath(response.data.file_path);
         }
@@ -33,13 +45,18 @@ const MapView = () => {
     };
 
     fetchMapData();
-  }, []);
+  }, [filters]);
 
   return (
     <div className="map-view">
       <div className="map-header">
         <h1>🗺️ Interactive Railway Map</h1>
         <p>US-4: Visualize train movements and delays across Italy</p>
+      </div>
+
+      {/* Filters */}
+      <div style={{ marginBottom: '20px' }}>
+        <Filters onChange={setFilters} />
       </div>
 
       {loading && (

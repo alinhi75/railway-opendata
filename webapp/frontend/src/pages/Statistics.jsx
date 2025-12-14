@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { apiService } from '../services/api';
+import Filters from '../components/Filters';
 import './Statistics.css';
 
 /**
@@ -12,22 +13,36 @@ const Statistics = () => {
   const [trainCountPath, setTrainCountPath] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const [filters, setFilters] = useState({});
 
   useEffect(() => {
     const fetchStatistics = async () => {
       try {
         setLoading(true);
-        
+
+        // Build query params from filters
+        const params = {
+          start_date: filters.startDate || undefined,
+          end_date: filters.endDate || undefined,
+          railway_companies: filters.companies?.join(',') || undefined,
+          regions: filters.regions?.join(',') || undefined,
+          station_query: filters.stationQuery || undefined,
+        };
+
         // Fetch delay boxplot
-        const delayResponse = await apiService.getDelayBoxplot();
+        const delayResponse = await apiService.getDelayBoxplot(params);
         if (delayResponse.data.file_path) {
           setDelayBoxplotPath(delayResponse.data.file_path);
+        } else {
+          setDelayBoxplotPath(null);
         }
 
         // Fetch train count data
-        const trainResponse = await apiService.getDayTrainCount();
+        const trainResponse = await apiService.getDayTrainCount(params);
         if (trainResponse.data.file_path) {
           setTrainCountPath(trainResponse.data.file_path);
+        } else {
+          setTrainCountPath(null);
         }
 
         setError(null);
@@ -40,13 +55,18 @@ const Statistics = () => {
     };
 
     fetchStatistics();
-  }, []);
+  }, [filters]);
 
   return (
     <div className="statistics">
       <div className="statistics-header">
         <h1>📈 Advanced Statistics</h1>
         <p>Analyze train delays, service frequency, and performance patterns</p>
+      </div>
+
+      {/* Filters */}
+      <div style={{ marginBottom: '20px' }}>
+        <Filters onChange={setFilters} />
       </div>
 
       {loading && (
