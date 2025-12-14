@@ -31,16 +31,56 @@ const Dashboard = () => {
     fetchStats();
   }, []);
 
-  // Extract key metrics from stats
+  // Extract key metrics from stats (supports tabular describe JSON)
   const getMetric = (label) => {
-    if (!stats || !stats[label]) return 'N/A';
-    const data = stats[label];
+    if (!stats) return { mean: 'N/A', std: 'N/A', min: 'N/A', max: 'N/A', count: 0 };
+
+    // If stats come as a mapping with keys per label
+    if (stats[label]) {
+      const data = stats[label] || {};
+      return {
+        mean: data.mean != null ? Number(data.mean).toFixed(2) : 'N/A',
+        std: data.std != null ? Number(data.std).toFixed(2) : 'N/A',
+        min: data.min != null ? Number(data.min).toFixed(2) : 'N/A',
+        max: data.max != null ? Number(data.max).toFixed(2) : 'N/A',
+        count: data.count != null ? Math.floor(Number(data.count)) : 0,
+      };
+    }
+
+    // Otherwise, handle tabular format: { columns: [], index: [], data: [][] }
+    const cols = stats.columns;
+    const idx = stats.index;
+    const dat = stats.data;
+    if (!Array.isArray(cols) || !Array.isArray(idx) || !Array.isArray(dat)) {
+      return { mean: 'N/A', std: 'N/A', min: 'N/A', max: 'N/A', count: 0 };
+    }
+
+    const colIndex = cols.indexOf(label);
+    if (colIndex === -1) {
+      return { mean: 'N/A', std: 'N/A', min: 'N/A', max: 'N/A', count: 0 };
+    }
+
+    const getByRowLabel = (rowLabel) => {
+      const rowIdx = idx.indexOf(rowLabel);
+      if (rowIdx === -1) return null;
+      const row = dat[rowIdx];
+      if (!Array.isArray(row)) return null;
+      const val = row[colIndex];
+      return typeof val === 'number' ? val : (val != null ? Number(val) : null);
+    };
+
+    const count = getByRowLabel('count');
+    const mean = getByRowLabel('mean');
+    const std = getByRowLabel('std');
+    const min = getByRowLabel('min');
+    const max = getByRowLabel('max');
+
     return {
-      mean: data.mean ? data.mean.toFixed(2) : 'N/A',
-      std: data.std ? data.std.toFixed(2) : 'N/A',
-      min: data.min ? data.min.toFixed(2) : 'N/A',
-      max: data.max ? data.max.toFixed(2) : 'N/A',
-      count: data.count ? Math.floor(data.count) : 0,
+      mean: mean != null ? mean.toFixed(2) : 'N/A',
+      std: std != null ? std.toFixed(2) : 'N/A',
+      min: min != null ? min.toFixed(2) : 'N/A',
+      max: max != null ? max.toFixed(2) : 'N/A',
+      count: count != null ? Math.floor(count) : 0,
     };
   };
 
