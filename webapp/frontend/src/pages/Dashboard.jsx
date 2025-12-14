@@ -86,6 +86,7 @@ const Dashboard = () => {
 
   return (
     <div className="dashboard">
+      <div className="dashboard-container">
       <div className="dashboard-header">
         <h1>📊 Railway Performance Dashboard</h1>
         <p>Real-time insights into Italian railway system performance</p>
@@ -227,6 +228,7 @@ const Dashboard = () => {
           </section>
         </>
       )}
+      </div>
     </div>
   );
 };
