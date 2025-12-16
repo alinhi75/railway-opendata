@@ -1,0 +1,106 @@
+/* API Docs Page Styles */
+.api-docs {
+  width: 100%;
+}
+
+.api-docs-container {
+  max-width: 1200px;
+  margin: 0 auto;
+}
+
+.api-docs-header {
+  margin-bottom: 24px;
+}
+
+.api-docs-header h1 {
+  margin: 0 0 10px 0;
+  font-size: 32px;
+  color: #1f2937;
+}
+
+.api-docs-header p {
+  margin: 0 0 10px 0;
+  font-size: 16px;
+  color: #6b7280;
+}
+
+.api-docs-base {
+  margin: 0;
+  color: #374151;
+}
+
+.api-docs-section {
+  background: white;
+  border-radius: 8px;
+  padding: 20px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+  margin-bottom: 18px;
+}
+
+.api-docs-section h2 {
+  margin: 0 0 12px 0;
+  font-size: 18px;
+  color: #1f2937;
+}
+
+.api-doc {
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  padding: 14px;
+  margin-top: 12px;
+}
+
+.api-doc-line {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 8px;
+}
+
+.method {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 44px;
+  height: 24px;
+  padding: 0 10px;
+  border-radius: 999px;
+  background: #111827;
+  color: white;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.4px;
+}
+
+.path {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+  font-size: 14px;
+  color: #111827;
+}
+
+.hint {
+  margin: 8px 0 0 0;
+  color: #6b7280;
+  font-size: 13px;
+}
+
+.params {
+  display: grid;
+  gap: 8px;
+  color: #374151;
+}
+
+.api-docs-section a {
+  color: #646cff;
+  text-decoration: none;
+}
+
+.api-docs-section a:hover {
+  text-decoration: underline;
+}
+
+@media (max-width: 768px) {
+  .api-docs-header h1 {
+    font-size: 24px;
+  }
+}

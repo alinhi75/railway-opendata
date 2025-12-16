@@ -1,0 +1,62 @@
+/* About Page Styles */
+.about {
+  width: 100%;
+}
+
+.about-container {
+  max-width: 1200px;
+  margin: 0 auto;
+}
+
+.about-header {
+  margin-bottom: 28px;
+}
+
+.about-header h1 {
+  margin: 0 0 10px 0;
+  font-size: 32px;
+  color: #1f2937;
+}
+
+.about-header p {
+  margin: 0;
+  font-size: 16px;
+  color: #6b7280;
+}
+
+.about-section {
+  background: white;
+  border-radius: 8px;
+  padding: 20px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+  margin-bottom: 18px;
+}
+
+.about-section h2 {
+  margin: 0 0 12px 0;
+  font-size: 18px;
+  color: #1f2937;
+}
+
+.about-section p {
+  margin: 0 0 10px 0;
+  color: #374151;
+  line-height: 1.6;
+}
+
+.about-section p:last-child {
+  margin-bottom: 0;
+}
+
+.about-section ul {
+  margin: 0;
+  padding-left: 18px;
+  color: #374151;
+  line-height: 1.8;
+}
+
+@media (max-width: 768px) {
+  .about-header h1 {
+    font-size: 24px;
+  }
+}

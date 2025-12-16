@@ -41,9 +41,9 @@ const Header = () => {
           <Link to="/map" className="nav-link" onClick={() => setIsMenuOpen(false)}>
             🗺️ Map
           </Link>
-          <a href="#about" className="nav-link" onClick={() => setIsMenuOpen(false)}>
+          <Link to="/about" className="nav-link" onClick={() => setIsMenuOpen(false)}>
             ℹ️ About
-          </a>
+          </Link>
         </nav>
       </div>
     </header>

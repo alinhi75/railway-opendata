@@ -1,4 +1,5 @@
 import React from 'react';
+import { Link } from 'react-router-dom';
 import './Footer.css';
 
 /**
@@ -23,18 +24,18 @@ const Footer = () => {
           <div className="footer-section">
             <h4>Quick Links</h4>
             <ul>
-              <li><a href="/">Dashboard</a></li>
-              <li><a href="/statistics">Statistics</a></li>
-              <li><a href="/map">Map</a></li>
+              <li><Link to="/">Dashboard</Link></li>
+              <li><Link to="/statistics">Statistics</Link></li>
+              <li><Link to="/map">Map</Link></li>
             </ul>
           </div>
 
           <div className="footer-section">
             <h4>Resources</h4>
             <ul>
-              <li><a href="#github">GitHub Repository</a></li>
-              <li><a href="#docs">Documentation</a></li>
-              <li><a href="#api">API Docs</a></li>
+              <li><a href="https://github.com/alinhi75/railway-opendata" target="_blank" rel="noopener noreferrer">GitHub Repository</a></li>
+              <li><Link to="/docs">Documentation</Link></li>
+              <li><Link to="/api-docs">API Docs</Link></li>
             </ul>
           </div>
 
@@ -43,18 +44,22 @@ const Footer = () => {
             <p>
               <strong>Thesis Project</strong><br />
               Politecnico di Torino<br />
-              Prof. Antonio Vetrò
+              Prof. Antonio Vetrò<br />
+              Prof. Andrea Trentini
+              Marco Aceti<br />
+              Enea Ahmedhodzic<br />
+
             </p>
           </div>
         </div>
 
         <div className="footer-bottom">
           <p>&copy; {currentYear} Railway OpenData. All rights reserved.</p>
-          <p>
+          {/* <p>
             <a href="#privacy">Privacy Policy</a> | 
             <a href="#terms">Terms of Service</a> | 
             <a href="#data">Data Sources</a>
-          </p>
+          </p> */}
         </div>
       </div>
     </footer>
