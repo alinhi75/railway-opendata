@@ -8,6 +8,7 @@ from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from pathlib import Path
+import os
 import json
 import csv
 import hashlib
@@ -15,7 +16,8 @@ import sys
 from datetime import date
 from typing import Dict, Any, Optional, List, Iterable
 
-# Ensure the repo root is importable so we can reuse analysis utilities/types.
+os.environ.setdefault("MPLBACKEND", "Agg")
+
 REPO_ROOT = Path(__file__).resolve().parents[2]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
@@ -465,6 +467,8 @@ def get_delay_boxplot(
 
         import pandas as pd
         import seaborn as sns
+        import matplotlib
+        matplotlib.use("Agg", force=True)
         import matplotlib.pyplot as plt
 
         df = _load_trains_df(
@@ -556,6 +560,8 @@ def get_day_train_count(
 
         import pandas as pd
         import seaborn as sns
+        import matplotlib
+        matplotlib.use("Agg", force=True)
         import matplotlib.pyplot as plt
 
         df = _load_trains_df(

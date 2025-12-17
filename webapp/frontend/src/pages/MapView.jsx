@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { MapContainer, TileLayer, GeoJSON, Marker, Popup, useMap } from 'react-leaflet';
+import { MapContainer, TileLayer, GeoJSON, Marker, Popup, Polygon, useMap } from 'react-leaflet';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 
@@ -9,6 +9,59 @@ import './MapView.css';
 
 const ITALY_CENTER = [41.890, 12.492];
 const STATION_FOCUS_ZOOM = 13;
+const REGION_FOCUS_PADDING = [30, 30];
+
+function _cross(o, a, b) {
+  // 2D cross product of OA and OB vectors, where points are [x, y].
+  return (a[0] - o[0]) * (b[1] - o[1]) - (a[1] - o[1]) * (b[0] - o[0]);
+}
+
+function _convexHull(points) {
+  // Monotonic chain convex hull. Input points: Array<[x, y]>.
+  if (!points || points.length < 3) return null;
+
+  const pts = [...points]
+    .filter((p) => Array.isArray(p) && p.length === 2)
+    .sort((p1, p2) => (p1[0] === p2[0] ? p1[1] - p2[1] : p1[0] - p2[0]));
+
+  if (pts.length < 3) return null;
+
+  const lower = [];
+  for (const p of pts) {
+    while (lower.length >= 2 && _cross(lower[lower.length - 2], lower[lower.length - 1], p) <= 0) {
+      lower.pop();
+    }
+    lower.push(p);
+  }
+
+  const upper = [];
+  for (let i = pts.length - 1; i >= 0; i--) {
+    const p = pts[i];
+    while (upper.length >= 2 && _cross(upper[upper.length - 2], upper[upper.length - 1], p) <= 0) {
+      upper.pop();
+    }
+    upper.push(p);
+  }
+
+  upper.pop();
+  lower.pop();
+  const hull = lower.concat(upper);
+  return hull.length >= 3 ? hull : null;
+}
+
+function _pointInPolygonLatLng(pointLatLng, polygonLatLngs) {
+  // Ray casting algorithm for [lat, lng] points against polygon of [lat, lng]
+  if (!pointLatLng || !polygonLatLngs || polygonLatLngs.length < 3) return false;
+  const [py, px] = pointLatLng; // y=lat, x=lng for readability below
+  let inside = false;
+  for (let i = 0, j = polygonLatLngs.length - 1; i < polygonLatLngs.length; j = i++) {
+    const [yi, xi] = polygonLatLngs[i];
+    const [yj, xj] = polygonLatLngs[j];
+    const intersect = yi > py !== yj > py && px < ((xj - xi) * (py - yi)) / (yj - yi) + xi;
+    if (intersect) inside = !inside;
+  }
+  return inside;
+}
 
 const selectedStationIcon = L.divIcon({
   className: 'selected-station-icon',
@@ -17,6 +70,20 @@ const selectedStationIcon = L.divIcon({
   iconAnchor: [14, 28],
   popupAnchor: [0, -28],
 });
+
+// Palette used to distinguish multiple selected regions consistently
+const REGION_COLORS = ['#dc2626', '#2563eb', '#059669', '#d97706', '#7c3aed', '#0891b2', '#f43f5e', '#16a34a'];
+
+// Build a colored divIcon for stations that belong to a selected region
+function getRegionStationIcon(color) {
+  return L.divIcon({
+    className: 'region-station-icon',
+    html: `<div class="region-station-pin" style="background:${color};"></div>`,
+    iconSize: [22, 22],
+    iconAnchor: [11, 22],
+    popupAnchor: [0, -22],
+  });
+}
 
 function AutoZoomToStation({ feature }) {
   const map = useMap();
@@ -28,6 +95,18 @@ function AutoZoomToStation({ feature }) {
 
     map.flyTo([lat, lng], STATION_FOCUS_ZOOM, { duration: 0.8 });
   }, [feature, map]);
+
+  return null;
+}
+
+function AutoFitToRegions({ bounds, enabled }) {
+  const map = useMap();
+
+  useEffect(() => {
+    if (!enabled) return;
+    if (!bounds) return;
+    map.fitBounds(bounds, { padding: REGION_FOCUS_PADDING, animate: true, duration: 0.8 });
+  }, [bounds, enabled, map]);
 
   return null;
 }
@@ -55,33 +134,6 @@ const MapView = () => {
     fetchStations();
   }, []);
 
-  const filteredStationsFc = useMemo(() => {
-    const features = stationsFc?.features || [];
-    if (!features.length) return stationsFc;
-
-    const selectedRegions = (filters.regions || []).map((r) => String(r).trim().toLowerCase());
-    const q = String(filters.stationQuery || '').trim().toLowerCase();
-
-    if (selectedRegions.length === 0 && q.length < 2) return stationsFc;
-
-    const out = features.filter((f) => {
-      const props = f?.properties || {};
-      const name = String(props.name || props.long_name || '').toLowerCase();
-      const code = String(props.code || '').toLowerCase();
-      const regionName = String(props.region_name || props.regionName || '').toLowerCase();
-
-      if (selectedRegions.length > 0 && !selectedRegions.includes(regionName)) return false;
-
-      if (q.length >= 2) {
-        const hay = `${name} ${code} ${regionName}`;
-        return hay.includes(q);
-      }
-      return true;
-    });
-
-    return { type: 'FeatureCollection', features: out };
-  }, [stationsFc, filters.regions, filters.stationQuery]);
-
   const selectedStationFeature = useMemo(() => {
     const features = stationsFc?.features || [];
     if (!features.length) return null;
@@ -108,6 +160,33 @@ const MapView = () => {
     );
   }, [stationsFc, filters.stationCode, filters.stationQuery]);
 
+  const filteredStationsFc = useMemo(() => {
+    const features = stationsFc?.features || [];
+    if (!features.length) return stationsFc;
+    const selectedRegions = (filters.regions || []).map((r) => String(r).trim().toLowerCase());
+    const q = String(filters.stationQuery || '').trim().toLowerCase();
+
+    if (selectedRegions.length === 0 && q.length < 2) return stationsFc;
+
+    const out = features.filter((f) => {
+      const props = f?.properties || {};
+      const name = String(props.name || props.long_name || '').toLowerCase();
+      const code = String(props.code || '').toLowerCase();
+      const regionName = String(props.region_name || props.regionName || '').toLowerCase();
+
+      if (selectedRegions.length > 0 && !selectedRegions.includes(regionName)) return false;
+
+      if (q.length >= 2) {
+        const hay = `${name} ${code} ${regionName}`;
+        return hay.includes(q);
+      }
+
+      return true;
+    });
+
+    return { type: 'FeatureCollection', features: out };
+  }, [stationsFc, filters.regions, filters.stationQuery]);
+
   const selectedStationLatLng = useMemo(() => {
     const coords = selectedStationFeature?.geometry?.coordinates;
     if (!coords || coords.length < 2) return null;
@@ -115,6 +194,71 @@ const MapView = () => {
     if (typeof lat !== 'number' || typeof lng !== 'number') return null;
     return [lat, lng];
   }, [selectedStationFeature]);
+
+  const selectedRegionsLower = useMemo(() => {
+    return (filters.regions || []).map((r) => String(r).trim().toLowerCase()).filter(Boolean);
+  }, [filters.regions]);
+
+  // Deterministic color per selected region based on selection order
+  const regionColorMap = useMemo(() => {
+    const map = {};
+    selectedRegionsLower.forEach((name, i) => {
+      map[name] = REGION_COLORS[i % REGION_COLORS.length];
+    });
+    return map;
+  }, [selectedRegionsLower]);
+
+  const selectedRegionsBounds = useMemo(() => {
+    if (!selectedRegionsLower.length) return null;
+
+    const features = stationsFc?.features || [];
+    const pts = features
+      .filter((f) => {
+        const regionName = String(f?.properties?.region_name || f?.properties?.regionName || '').trim().toLowerCase();
+        return regionName && selectedRegionsLower.includes(regionName);
+      })
+      .map((f) => {
+        const coords = f?.geometry?.coordinates;
+        if (!coords || coords.length < 2) return null;
+        const [lng, lat] = coords;
+        if (typeof lat !== 'number' || typeof lng !== 'number') return null;
+        return [lat, lng];
+      })
+      .filter(Boolean);
+
+    if (!pts.length) return null;
+    return L.latLngBounds(pts);
+  }, [stationsFc, selectedRegionsLower]);
+
+  // Build a convex hull polygon per selected region
+  const selectedRegionsPolygons = useMemo(() => {
+    if (!selectedRegionsLower.length) return {};
+    const features = stationsFc?.features || [];
+    const ptsByRegion = new Map();
+
+    for (const f of features) {
+      const regionName = String(f?.properties?.region_name || f?.properties?.regionName || '')
+        .trim()
+        .toLowerCase();
+      if (!regionName || !selectedRegionsLower.includes(regionName)) continue;
+      const coords = f?.geometry?.coordinates;
+      if (!coords || coords.length < 2) continue;
+      const [lng, lat] = coords;
+      if (typeof lat !== 'number' || typeof lng !== 'number') continue;
+      if (!ptsByRegion.has(regionName)) ptsByRegion.set(regionName, []);
+      ptsByRegion.get(regionName).push([lng, lat]);
+    }
+
+    const polygons = {};
+    for (const name of selectedRegionsLower) {
+      const xy = ptsByRegion.get(name) || [];
+      const hull = _convexHull(xy);
+      if (hull && hull.length >= 3) {
+        polygons[name] = hull.map(([lng, lat]) => [lat, lng]);
+      }
+    }
+    return polygons; // { regionName: [[lat,lng], ...] }
+  }, [stationsFc, selectedRegionsLower]);
 
   return (
     <div className="map-view">
@@ -150,6 +294,34 @@ const MapView = () => {
 
             <AutoZoomToStation feature={selectedStationFeature} />
 
+            <AutoFitToRegions
+              enabled={selectedRegionsLower.length > 0 && !selectedStationLatLng}
+              bounds={selectedRegionsBounds}
+            />
+
+            {/* One polygon per selected region, each with its own color */}
+            {selectedRegionsLower.length > 0 && !selectedStationLatLng
+              ? selectedRegionsLower.map((name) => {
+                  const poly = selectedRegionsPolygons[name];
+                  if (!Array.isArray(poly) || poly.length < 3) return null;
+                  const color = regionColorMap[name] || REGION_COLORS[0];
+                  return (
+                    <Polygon
+                      key={`poly-${name}`}
+                      positions={poly}
+                      pathOptions={{
+                        color,
+                        weight: 2,
+                        dashArray: '6 6',
+                        fill: true,
+                        fillColor: color,
+                        fillOpacity: 0.08,
+                      }}
+                    />
+                  );
+                })
+              : null}
+
             {selectedStationLatLng ? (
               <Marker position={selectedStationLatLng} icon={selectedStationIcon} zIndexOffset={1000}>
                 <Popup>
@@ -157,7 +329,8 @@ const MapView = () => {
                     const props = selectedStationFeature?.properties || {};
                     const title = props.name || props.long_name || props.code || 'Station';
                     const code = props.code ? ` (${props.code})` : '';
-                    const region = props.region_name ? ` — ${props.region_name}` : '';
+                    const regionText = props.region_name || props.regionName;
+                    const region = regionText ? ` — ${regionText}` : '';
                     return `${title}${code}${region}`;
                   })()}
                 </Popup>
@@ -168,19 +341,35 @@ const MapView = () => {
               <GeoJSON
                 data={filteredStationsFc}
                 pointToLayer={(feature, latlng) =>
-                  L.circleMarker(latlng, {
-                    radius: 3,
-                    weight: 1,
-                    color: '#667eea',
-                    fillColor: '#667eea',
-                    fillOpacity: 0.6,
-                  })
+                  (() => {
+                    // Region name based inclusion and color
+                    const regionName = String(
+                      feature?.properties?.region_name || feature?.properties?.regionName || ''
+                    )
+                      .trim()
+                      .toLowerCase();
+                    const inSelectedRegion = selectedRegionsLower.includes(regionName);
+
+                    if (inSelectedRegion) {
+                      const color = regionColorMap[regionName] || REGION_COLORS[0];
+                      return L.marker(latlng, { icon: getRegionStationIcon(color), zIndexOffset: 250 });
+                    }
+
+                    return L.circleMarker(latlng, {
+                      radius: 3,
+                      weight: 1,
+                      color: '#667eea',
+                      fillColor: '#667eea',
+                      fillOpacity: 0.55,
+                    });
+                  })()
                 }
                 onEachFeature={(feature, layer) => {
                   const props = feature?.properties || {};
                   const title = props.name || props.long_name || props.code || 'Station';
                   const code = props.code ? ` (${props.code})` : '';
-                  const region = props.region_name ? ` — ${props.region_name}` : '';
+                  const regionText = props.region_name || props.regionName;
+                  const region = regionText ? ` — ${regionText}` : '';
                   layer.bindPopup(`${title}${code}${region}`);
                 }}
               />

@@ -73,6 +73,36 @@
   top: 4px;
 }
 
+/* Region stations marker (Google Maps-like red pin) */
+.region-station-icon {
+  background: transparent;
+  border: none;
+}
+
+.region-station-pin {
+  width: 14px;
+  height: 14px;
+  background: #dc2626;
+  border-radius: 50% 50% 50% 0;
+  transform: rotate(-45deg);
+  position: relative;
+  left: 4px;
+  top: 1px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.28);
+  border: 2px solid #ffffff;
+}
+
+.region-station-pin::after {
+  content: '';
+  width: 5px;
+  height: 5px;
+  background: #ffffff;
+  border-radius: 50%;
+  position: absolute;
+  left: 2.5px;
+  top: 2.5px;
+}
+
 .map-info {
   background: #f0f4ff;
   border-left: 4px solid #667eea;
