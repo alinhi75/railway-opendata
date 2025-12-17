@@ -21,6 +21,8 @@ const Filters = ({ onChange, initialFilters = {} }) => {
 
   const [availableCompanies, setAvailableCompanies] = useState([]);
   const [availableRegions, setAvailableRegions] = useState([]);
+  const [stationSuggestions, setStationSuggestions] = useState([]);
+  const [stationLoading, setStationLoading] = useState(false);
 
   // Presets for quick selection
   const presets = useMemo(() => ([
@@ -45,6 +47,70 @@ const Filters = ({ onChange, initialFilters = {} }) => {
     };
     fetchFiltersMeta();
   }, []);
+
+  useEffect(() => {
+    const q = (stationQuery || '').trim();
+    if (q.length < 2) {
+      setStationSuggestions([]);
+      setStationLoading(false);
+      return;
+    }
+
+    const isExactRegion = availableRegions
+      .some((r) => String(r).trim().toLowerCase() === q.toLowerCase());
+
+    let cancelled = false;
+    setStationLoading(true);
+
+    const t = setTimeout(async () => {
+      try {
+        // For region-name searches (e.g. "Lombardia"), show all matches.
+        // Otherwise keep a small cap for typeahead performance.
+        const res = await apiService.getStations({ q, limit: isExactRegion ? 0 : 10 });
+        if (cancelled) return;
+
+        const features = res?.data?.features || [];
+        const suggestions = features
+          .map((f) => {
+            const props = f.properties || {};
+            return {
+              code: props.code,
+              name: props.name || props.short_name || props.shortName || props.code,
+              region: props.region,
+              regionName: props.region_name || props.regionName || null,
+            };
+          })
+          .filter((s) => s.name)
+          .sort((a, b) => {
+            const an = String(a.name || '').trim();
+            const bn = String(b.name || '').trim();
+            const byName = an.localeCompare(bn, 'it', { sensitivity: 'base' });
+            if (byName !== 0) return byName;
+
+            const ac = String(a.code || '').trim();
+            const bc = String(b.code || '').trim();
+            return ac.localeCompare(bc, 'it', { sensitivity: 'base' });
+          });
+
+        setStationSuggestions(suggestions);
+      } catch (err) {
+        if (!cancelled) setStationSuggestions([]);
+        console.error('Failed to load stations', err);
+      } finally {
+        if (!cancelled) setStationLoading(false);
+      }
+    }, 250);
+
+    return () => {
+      cancelled = true;
+      clearTimeout(t);
+    };
+  }, [stationQuery]);
+
+  const selectStation = (s) => {
+    setStationQuery(s.name);
+    setStationSuggestions([]);
+  };
 
   const applyFilters = () => {
     const filters = {
@@ -154,6 +220,31 @@ const Filters = ({ onChange, initialFilters = {} }) => {
             value={stationQuery}
             onChange={(e) => setStationQuery(e.target.value)}
           />
+
+          {(stationLoading || stationSuggestions.length > 0) && (
+            <div className="station-suggestions">
+              {stationLoading && (
+                <div className="station-suggestion muted">Searching…</div>
+              )}
+              {!stationLoading && stationSuggestions.length === 0 && (
+                <div className="station-suggestion muted">No matches</div>
+              )}
+              {!stationLoading && stationSuggestions.map((s) => (
+                <button
+                  type="button"
+                  key={`${s.code || ''}-${s.name}-${s.region || ''}-${s.regionName || ''}`}
+                  className="station-suggestion"
+                  onClick={() => selectStation(s)}
+                >
+                  <span className="station-name">
+                    {s.name}
+                    {s.regionName ? <span className="station-region"> — {s.regionName}</span> : null}
+                  </span>
+                  {s.code && <span className="station-code">{s.code}</span>}
+                </button>
+              ))}
+            </div>
+          )}
         </div>
       </section>
     </div>
