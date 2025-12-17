@@ -35,6 +35,14 @@
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
 }
 
+.map-leaflet {
+  width: 100%;
+  height: 600px;
+  border-radius: 8px;
+  border: 1px solid #e5e7eb;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+}
+
 .map-info {
   background: #f0f4ff;
   border-left: 4px solid #667eea;
@@ -206,6 +214,10 @@
   }
 
   .map-iframe {
+    height: 400px;
+  }
+
+  .map-leaflet {
     height: 400px;
   }
 

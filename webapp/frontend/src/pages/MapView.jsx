@@ -1,60 +1,71 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
+import { MapContainer, TileLayer, GeoJSON } from 'react-leaflet';
+import L from 'leaflet';
+import 'leaflet/dist/leaflet.css';
+
 import { apiService } from '../services/api';
 import Filters from '../components/Filters';
 import './MapView.css';
 
-/**
- * Map View Page
- * US-4: Interactive Trajectory Map
- * Shows animated train movements and delays geographically
- */
+const ITALY_CENTER = [41.890, 12.492];
+
 const MapView = () => {
-  const [mapPath, setMapPath] = useState(null);
+  const [stationsFc, setStationsFc] = useState(null);
+  const [filters, setFilters] = useState({});
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
-  const [filters, setFilters] = useState({});
-
   useEffect(() => {
-    const fetchMapData = async () => {
+    const fetchStations = async () => {
       try {
         setLoading(true);
-        
-        // Build query params from filters
-        const params = {
-          start_date: filters.startDate || undefined,
-          end_date: filters.endDate || undefined,
-          railway_companies: filters.companies?.join(',') || undefined,
-          regions: filters.regions?.join(',') || undefined,
-          station_query: filters.stationQuery || undefined,
-        };
-
-        // Fetch trajectory map
-        const response = await apiService.getTrajectories(params);
-        if (response.data.file_path) {
-          setMapPath(response.data.file_path);
-        }
-
+        const res = await apiService.getStations({ with_coords_only: true, limit: 0 });
+        setStationsFc(res?.data || null);
         setError(null);
       } catch (err) {
-        setError('Failed to load map. Make sure the backend is running and map data exists.');
+        setError('Failed to load stations. Make sure the backend is running and station data exists.');
         console.error(err);
       } finally {
         setLoading(false);
       }
     };
+    fetchStations();
+  }, []);
 
-    fetchMapData();
-  }, [filters]);
+  const filteredStationsFc = useMemo(() => {
+    const features = stationsFc?.features || [];
+    if (!features.length) return stationsFc;
+
+    const selectedRegions = (filters.regions || []).map((r) => String(r).trim().toLowerCase());
+    const q = String(filters.stationQuery || '').trim().toLowerCase();
+
+    if (selectedRegions.length === 0 && q.length < 2) return stationsFc;
+
+    const out = features.filter((f) => {
+      const props = f?.properties || {};
+      const name = String(props.name || props.long_name || '').toLowerCase();
+      const code = String(props.code || '').toLowerCase();
+      const regionName = String(props.region_name || props.regionName || '').toLowerCase();
+
+      if (selectedRegions.length > 0 && !selectedRegions.includes(regionName)) return false;
+
+      if (q.length >= 2) {
+        const hay = `${name} ${code} ${regionName}`;
+        return hay.includes(q);
+      }
+      return true;
+    });
+
+    return { type: 'FeatureCollection', features: out };
+  }, [stationsFc, filters.regions, filters.stationQuery]);
 
   return (
     <div className="map-view">
       <div className="map-header">
-        <h1>🗺️ Interactive Railway Map</h1>
-        <p>US-4: Visualize train movements and delays across Italy</p>
+        <h1>🗺️ Stations Map</h1>
+        <p>View all stations and explore them on the map.</p>
       </div>
 
-      {/* Filters */}
       <div style={{ marginBottom: '20px' }}>
         <Filters onChange={setFilters} />
       </div>
@@ -73,67 +84,36 @@ const MapView = () => {
       )}
 
       {!loading && !error && (
-        <>
-          {mapPath ? (
-            <div className="map-container">
-              <iframe
-                src={mapPath}
-                title="Railway Interactive Map"
-                className="map-iframe"
-              ></iframe>
-              <div className="map-info">
-                <h3>Map Features:</h3>
-                <ul>
-                  <li>🟢 Green lines = Trains on time</li>
-                  <li>🟠 Orange lines = Trains 5-15 min late</li>
-                  <li>🔴 Red lines = Trains  more than 15 min late</li>
-                  <li>Line thickness = Train crowding level</li>
-                  <li>Click stations for performance details</li>
-                </ul>
-              </div>
-            </div>
-          ) : (
-            <div className="placeholder">
-              <h2>📊 No map data available</h2>
-              <p>Run the following command to generate the trajectory map:</p>
-              <pre>python scripts/run_trajectories_week_sample.py --start 2025-03-27 --end 2025-04-02 --sample 0.1 --out data/outputs/trajectories_map.html</pre>
-            </div>
-          )}
+        <div className="map-container">
+          <MapContainer center={ITALY_CENTER} zoom={6} className="map-leaflet" scrollWheelZoom>
+            <TileLayer
+              url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+              attribution="&copy; OpenStreetMap contributors"
+            />
 
-          {/* Map Usage Guide */}
-          <section className="usage-guide">
-            <h2>How to Use the Map</h2>
-            <div className="guide-grid">
-              <div className="guide-card">
-                <h3>🔍 Explore Stations</h3>
-                <p>Click on any station marker to see:</p>
-                <ul>
-                  <li>Station name and code</li>
-                  <li>Performance statistics</li>
-                  <li>Trains passing through</li>
-                </ul>
-              </div>
-              <div className="guide-card">
-                <h3>📊 Analyze Delays</h3>
-                <p>Use colors to understand:</p>
-                <ul>
-                  <li>Which routes have delays</li>
-                  <li>Time-of-day patterns</li>
-                  <li>Regional variations</li>
-                </ul>
-              </div>
-              <div className="guide-card">
-                <h3>📈 Track Crowding</h3>
-                <p>Line thickness shows:</p>
-                <ul>
-                  <li>Train capacity utilization</li>
-                  <li>Popular routes</li>
-                  <li>Peak travel times</li>
-                </ul>
-              </div>
-            </div>
-          </section>
-        </>
+            {filteredStationsFc?.features?.length ? (
+              <GeoJSON
+                data={filteredStationsFc}
+                pointToLayer={(feature, latlng) =>
+                  L.circleMarker(latlng, {
+                    radius: 3,
+                    weight: 1,
+                    color: '#667eea',
+                    fillColor: '#667eea',
+                    fillOpacity: 0.6,
+                  })
+                }
+                onEachFeature={(feature, layer) => {
+                  const props = feature?.properties || {};
+                  const title = props.name || props.long_name || props.code || 'Station';
+                  const code = props.code ? ` (${props.code})` : '';
+                  const region = props.region_name ? ` — ${props.region_name}` : '';
+                  layer.bindPopup(`${title}${code}${region}`);
+                }}
+              />
+            ) : null}
+          </MapContainer>
+        </div>
       )}
     </div>
   );

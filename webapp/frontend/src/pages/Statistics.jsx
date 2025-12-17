@@ -3,6 +3,9 @@ import { apiService } from '../services/api';
 import Filters from '../components/Filters';
 import './Statistics.css';
 
+const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
+const toApiUrl = (p) => (p && typeof p === 'string' && p.startsWith('/') ? `${API_URL}${p}` : p);
+
 /**
  * Statistics Page
  * US-2 & US-3: Delay Distributions and Service Frequency
@@ -32,7 +35,7 @@ const Statistics = () => {
         // Fetch delay boxplot
         const delayResponse = await apiService.getDelayBoxplot(params);
         if (delayResponse.data.file_path) {
-          setDelayBoxplotPath(delayResponse.data.file_path);
+          setDelayBoxplotPath(toApiUrl(delayResponse.data.file_path));
         } else {
           setDelayBoxplotPath(null);
         }
@@ -40,7 +43,7 @@ const Statistics = () => {
         // Fetch train count data
         const trainResponse = await apiService.getDayTrainCount(params);
         if (trainResponse.data.file_path) {
-          setTrainCountPath(trainResponse.data.file_path);
+          setTrainCountPath(toApiUrl(trainResponse.data.file_path));
         } else {
           setTrainCountPath(null);
         }
@@ -107,7 +110,7 @@ const Statistics = () => {
               ) : (
                 <div className="placeholder">
                   <p>📊 No delay boxplot data available</p>
-                  <p className="hint">Run: python scripts/delay_boxplot_fast.py</p>
+                  <p className="hint">Pick a date range and click Apply.</p>
                 </div>
               )}
             </div>
@@ -136,7 +139,7 @@ const Statistics = () => {
               ) : (
                 <div className="placeholder">
                   <p>📊 No train count data available</p>
-                  <p className="hint">Run: python scripts/day_train_count_fast.py</p>
+                  <p className="hint">Pick a date range and click Apply.</p>
                 </div>
               )}
             </div>
