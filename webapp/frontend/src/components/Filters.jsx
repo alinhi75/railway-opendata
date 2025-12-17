@@ -18,6 +18,7 @@ const Filters = ({ onChange, initialFilters = {} }) => {
   const [companies, setCompanies] = useState(initialFilters.companies || []);
   const [regions, setRegions] = useState(initialFilters.regions || []);
   const [stationQuery, setStationQuery] = useState(initialFilters.stationQuery || '');
+  const [stationCode, setStationCode] = useState(initialFilters.stationCode || null);
 
   const [availableCompanies, setAvailableCompanies] = useState([]);
   const [availableRegions, setAvailableRegions] = useState([]);
@@ -109,7 +110,18 @@ const Filters = ({ onChange, initialFilters = {} }) => {
 
   const selectStation = (s) => {
     setStationQuery(s.name);
+    setStationCode(s.code || null);
     setStationSuggestions([]);
+
+    // Selecting from dropdown should immediately apply (needed for map zoom UX).
+    onChange?.({
+      startDate: startDate || null,
+      endDate: endDate || null,
+      companies,
+      regions,
+      stationQuery: s.name || null,
+      stationCode: s.code || null,
+    });
   };
 
   const applyFilters = () => {
@@ -119,6 +131,7 @@ const Filters = ({ onChange, initialFilters = {} }) => {
       companies,
       regions,
       stationQuery: stationQuery || null,
+      stationCode: stationCode || null,
     };
     onChange?.(filters);
   };
@@ -129,6 +142,7 @@ const Filters = ({ onChange, initialFilters = {} }) => {
     setCompanies([]);
     setRegions([]);
     setStationQuery('');
+    setStationCode(null);
     onChange?.({});
   };
 

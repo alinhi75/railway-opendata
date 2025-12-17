@@ -43,6 +43,36 @@
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
 }
 
+/* Selected station marker (Google Maps-like red pin) */
+.selected-station-icon {
+  background: transparent;
+  border: none;
+}
+
+.selected-station-pin {
+  width: 18px;
+  height: 18px;
+  background: #dc2626;
+  border-radius: 50% 50% 50% 0;
+  transform: rotate(-45deg);
+  position: relative;
+  left: 5px;
+  top: 2px;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.35);
+  border: 2px solid #ffffff;
+}
+
+.selected-station-pin::after {
+  content: '';
+  width: 6px;
+  height: 6px;
+  background: #ffffff;
+  border-radius: 50%;
+  position: absolute;
+  left: 4px;
+  top: 4px;
+}
+
 .map-info {
   background: #f0f4ff;
   border-left: 4px solid #667eea;

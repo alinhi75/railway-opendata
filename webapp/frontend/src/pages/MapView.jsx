@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { MapContainer, TileLayer, GeoJSON } from 'react-leaflet';
+import { MapContainer, TileLayer, GeoJSON, Marker, Popup, useMap } from 'react-leaflet';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 
@@ -8,6 +8,29 @@ import Filters from '../components/Filters';
 import './MapView.css';
 
 const ITALY_CENTER = [41.890, 12.492];
+const STATION_FOCUS_ZOOM = 13;
+
+const selectedStationIcon = L.divIcon({
+  className: 'selected-station-icon',
+  html: '<div class="selected-station-pin"></div>',
+  iconSize: [28, 28],
+  iconAnchor: [14, 28],
+  popupAnchor: [0, -28],
+});
+
+function AutoZoomToStation({ feature }) {
+  const map = useMap();
+
+  useEffect(() => {
+    if (!feature?.geometry?.coordinates) return;
+    const [lng, lat] = feature.geometry.coordinates;
+    if (typeof lat !== 'number' || typeof lng !== 'number') return;
+
+    map.flyTo([lat, lng], STATION_FOCUS_ZOOM, { duration: 0.8 });
+  }, [feature, map]);
+
+  return null;
+}
 
 const MapView = () => {
   const [stationsFc, setStationsFc] = useState(null);
@@ -59,6 +82,40 @@ const MapView = () => {
     return { type: 'FeatureCollection', features: out };
   }, [stationsFc, filters.regions, filters.stationQuery]);
 
+  const selectedStationFeature = useMemo(() => {
+    const features = stationsFc?.features || [];
+    if (!features.length) return null;
+
+    const stationCode = String(filters.stationCode || '').trim().toLowerCase();
+    const stationQuery = String(filters.stationQuery || '').trim().toLowerCase();
+
+    if (stationCode) {
+      const hit = features.find((f) => String(f?.properties?.code || '').trim().toLowerCase() === stationCode);
+      if (hit) return hit;
+    }
+
+    if (!stationQuery) return null;
+
+    // Exact match on name/long_name/code to avoid zooming while typing.
+    return (
+      features.find((f) => {
+        const props = f?.properties || {};
+        const name = String(props.name || '').trim().toLowerCase();
+        const longName = String(props.long_name || props.longName || '').trim().toLowerCase();
+        const code = String(props.code || '').trim().toLowerCase();
+        return stationQuery === name || stationQuery === longName || stationQuery === code;
+      }) || null
+    );
+  }, [stationsFc, filters.stationCode, filters.stationQuery]);
+
+  const selectedStationLatLng = useMemo(() => {
+    const coords = selectedStationFeature?.geometry?.coordinates;
+    if (!coords || coords.length < 2) return null;
+    const [lng, lat] = coords;
+    if (typeof lat !== 'number' || typeof lng !== 'number') return null;
+    return [lat, lng];
+  }, [selectedStationFeature]);
+
   return (
     <div className="map-view">
       <div className="map-header">
@@ -90,6 +147,22 @@ const MapView = () => {
               url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
               attribution="&copy; OpenStreetMap contributors"
             />
+
+            <AutoZoomToStation feature={selectedStationFeature} />
+
+            {selectedStationLatLng ? (
+              <Marker position={selectedStationLatLng} icon={selectedStationIcon} zIndexOffset={1000}>
+                <Popup>
+                  {(() => {
+                    const props = selectedStationFeature?.properties || {};
+                    const title = props.name || props.long_name || props.code || 'Station';
+                    const code = props.code ? ` (${props.code})` : '';
+                    const region = props.region_name ? ` — ${props.region_name}` : '';
+                    return `${title}${code}${region}`;
+                  })()}
+                </Popup>
+              </Marker>
+            ) : null}
 
             {filteredStationsFc?.features?.length ? (
               <GeoJSON
