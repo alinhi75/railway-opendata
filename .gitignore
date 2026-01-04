@@ -545,3 +545,9 @@ flycheck_*.el
 ### Custom
 data/*
 !.gitkeep
+
+# data foler in webapp/frontend
+webapp/data/*
+
+# Data source Archive
+railway-opendata.7z
