@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState, useRef } from 'react';
 import { apiService } from '../services/api';
 import './Filters.css';
 
@@ -18,12 +18,15 @@ const Filters = ({ onChange, initialFilters = {} }) => {
   const [companies, setCompanies] = useState(initialFilters.companies || []);
   const [regions, setRegions] = useState(initialFilters.regions || []);
   const [stationQuery, setStationQuery] = useState(initialFilters.stationQuery || '');
-  const [stationCode, setStationCode] = useState(initialFilters.stationCode || null);
+  const [selectedStations, setSelectedStations] = useState([]); // Array of {code, name, region, regionName}
 
   const [availableCompanies, setAvailableCompanies] = useState([]);
   const [availableRegions, setAvailableRegions] = useState([]);
   const [stationSuggestions, setStationSuggestions] = useState([]);
   const [stationLoading, setStationLoading] = useState(false);
+  const [dropdownOpen, setDropdownOpen] = useState(false);
+  const [mouseOverSuggestions, setMouseOverSuggestions] = useState(false); // Track if mouse is over suggestions to prevent closing on blur
+  const mouseDownOnSuggestions = useRef(false); // Track if mouse is down on suggestions to prevent closing on blur
 
   // Presets for quick selection
   const presets = useMemo(() => ([
@@ -65,9 +68,7 @@ const Filters = ({ onChange, initialFilters = {} }) => {
 
     const t = setTimeout(async () => {
       try {
-        // For region-name searches (e.g. "Lombardia"), show all matches.
-        // Otherwise keep a small cap for typeahead performance.
-        const res = await apiService.getStations({ q, limit: isExactRegion ? 0 : 10 });
+        const res = await apiService.getStations({ q, limit: 0 });
         if (cancelled) return;
 
         const features = res?.data?.features || [];
@@ -108,19 +109,33 @@ const Filters = ({ onChange, initialFilters = {} }) => {
     };
   }, [stationQuery]);
 
-  const selectStation = (s) => {
-    setStationQuery(s.name);
-    setStationCode(s.code || null);
-    setStationSuggestions([]);
 
-    // Selecting from dropdown should immediately apply (needed for map zoom UX).
+  const selectStation = (s) => {
+    setSelectedStations((prev) => {
+      if (prev.some((st) => st.code === s.code)) return prev;
+      return [...prev, s];
+    });
+    // Do not clear the search query after selection
     onChange?.({
       startDate: startDate || null,
       endDate: endDate || null,
       companies,
       regions,
-      stationQuery: s.name || null,
-      stationCode: s.code || null,
+      stationQuery: null,
+      stationCodes: [...selectedStations.map(st => st.code), s.code],
+    });
+  };
+
+  const removeSelectedStation = (code) => {
+    setSelectedStations((prev) => prev.filter((s) => s.code !== code));
+    const newSelected = selectedStations.filter((s) => s.code !== code);
+    onChange?.({
+      startDate: startDate || null,
+      endDate: endDate || null,
+      companies,
+      regions,
+      stationQuery: null,
+      stationCodes: newSelected.map(st => st.code),
     });
   };
 
@@ -131,7 +146,7 @@ const Filters = ({ onChange, initialFilters = {} }) => {
       companies,
       regions,
       stationQuery: stationQuery || null,
-      stationCode: stationCode || null,
+      stationCodes: selectedStations.map((s) => s.code).filter(Boolean),
     };
     onChange?.(filters);
   };
@@ -142,7 +157,7 @@ const Filters = ({ onChange, initialFilters = {} }) => {
     setCompanies([]);
     setRegions([]);
     setStationQuery('');
-    setStationCode(null);
+    setSelectedStations([]);
     onChange?.({});
   };
 
@@ -152,7 +167,12 @@ const Filters = ({ onChange, initialFilters = {} }) => {
   };
 
   const toggleCompany = (code) => {
-    setCompanies((prev) => prev.includes(code) ? prev.filter(c => c !== code) : [...prev, code]);
+    if (code === 'ALL') {
+      // 'Generale' means: no specific company/type filter
+      setCompanies([]);
+      return;
+    }
+    setCompanies((prev) => (prev.includes(code) ? prev.filter((c) => c !== code) : [...prev, code]));
   };
 
   const toggleRegion = (region) => {
@@ -192,6 +212,94 @@ const Filters = ({ onChange, initialFilters = {} }) => {
         </div>
       </section>
 
+      {/* Station Search */}
+      <section className="filters-section">
+        <h3>🚉 Station</h3>
+        <div className="station-search">
+          {/* Selected stations as chips */}
+          <div className="selected-stations-chips">
+            {selectedStations.map((s) => (
+              <span className="station-chip" key={s.code}>
+                {s.name}
+                {s.regionName ? <span className="station-region"> — {s.regionName}</span> : null}
+                {s.code && <span className="station-code">{s.code}</span>}
+                <button className="remove-chip" onClick={() => removeSelectedStation(s.code)} title="Remove">×</button>
+              </span>
+            ))}
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+            <input
+              type="text"
+              placeholder="Type station name (e.g., Milano Centrale)"
+              value={stationQuery}
+              onChange={(e) => {
+                setStationQuery(e.target.value);
+                setDropdownOpen(true);
+              }}
+              autoComplete="off"
+              onFocus={() => setDropdownOpen(true)}
+              onBlur={() => setTimeout(() => {
+                if (!mouseOverSuggestions && !mouseDownOnSuggestions.current) setDropdownOpen(false);
+              }, 150)}
+              style={{ flex: 1 }}
+            />
+            {stationQuery && (
+              <button
+                className="remove-chip"
+                style={{ fontSize: 18, marginLeft: 0, marginRight: 2, padding: '0 6px' }}
+                onClick={() => setStationQuery('')}
+                title="Clear search"
+                tabIndex={-1}
+              >×</button>
+            )}
+          </div>
+          {(dropdownOpen && (stationLoading || stationSuggestions.length > 0)) && (
+            <div
+              className="station-suggestions improved-scroll"
+              onMouseEnter={() => setMouseOverSuggestions(true)}
+              onMouseLeave={() => setMouseOverSuggestions(false)}
+              onMouseDown={() => { mouseDownOnSuggestions.current = true; }}
+              onMouseUp={() => { setTimeout(() => { mouseDownOnSuggestions.current = false; }, 0); }}
+            >
+              {stationLoading && (
+                <div className="station-suggestion muted">Searching…</div>
+              )}
+              {!stationLoading && stationSuggestions.length === 0 && (
+                <div className="station-suggestion muted">No matches</div>
+              )}
+              {!stationLoading && stationSuggestions.map((s) => {
+                const isSelected = selectedStations.some(sel => sel.code === s.code);
+                return (
+                  <label
+                    key={`${s.code || ''}-${s.name}-${s.region || ''}-${s.regionName || ''}`}
+                    className={`station-suggestion${isSelected ? ' selected' : ''}`}
+                    style={{ cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 8 }}
+                    onMouseDown={e => e.preventDefault()}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={isSelected}
+                      onChange={() => {
+                        if (isSelected) {
+                          removeSelectedStation(s.code);
+                        } else {
+                          selectStation(s);
+                        }
+                      }}
+                      style={{ marginRight: 8 }}
+                      tabIndex={-1}
+                    />
+                    <span className="station-name"><b>{s.name}</b></span>
+                    {s.regionName ? <span className="station-region"> — {s.regionName}</span> : null}
+                    {s.code && <span className="station-code">{s.code}</span>}
+                  </label>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      </section>
+
       {/* Companies */}
       <section className="filters-section">
         <h3>🏢 Companies</h3>
@@ -200,7 +308,9 @@ const Filters = ({ onChange, initialFilters = {} }) => {
             <button
               key={c.code}
               onClick={() => toggleCompany(c.code)}
-              className={`chip ${companies.includes(c.code) ? 'selected' : ''}`}
+              className={`chip ${
+                c.code === 'ALL' ? (companies.length === 0 ? 'selected' : '') : companies.includes(c.code) ? 'selected' : ''
+              }`}
             >
               {c.label}
             </button>
@@ -221,44 +331,6 @@ const Filters = ({ onChange, initialFilters = {} }) => {
               {r}
             </button>
           ))}
-        </div>
-      </section>
-
-      {/* Station Search */}
-      <section className="filters-section">
-        <h3>🚉 Station</h3>
-        <div className="station-search">
-          <input
-            type="text"
-            placeholder="Type station name (e.g., Milano Centrale)"
-            value={stationQuery}
-            onChange={(e) => setStationQuery(e.target.value)}
-          />
-
-          {(stationLoading || stationSuggestions.length > 0) && (
-            <div className="station-suggestions">
-              {stationLoading && (
-                <div className="station-suggestion muted">Searching…</div>
-              )}
-              {!stationLoading && stationSuggestions.length === 0 && (
-                <div className="station-suggestion muted">No matches</div>
-              )}
-              {!stationLoading && stationSuggestions.map((s) => (
-                <button
-                  type="button"
-                  key={`${s.code || ''}-${s.name}-${s.region || ''}-${s.regionName || ''}`}
-                  className="station-suggestion"
-                  onClick={() => selectStation(s)}
-                >
-                  <span className="station-name">
-                    {s.name}
-                    {s.regionName ? <span className="station-region"> — {s.regionName}</span> : null}
-                  </span>
-                  {s.code && <span className="station-code">{s.code}</span>}
-                </button>
-              ))}
-            </div>
-          )}
         </div>
       </section>
     </div>

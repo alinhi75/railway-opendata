@@ -11,6 +11,25 @@ const ITALY_CENTER = [41.890, 12.492];
 const STATION_FOCUS_ZOOM = 13;
 const REGION_FOCUS_PADDING = [30, 30];
 
+function _normalizeRegionKey(value) {
+  // Create a stable key so UI region chips match station geojson values.
+  // Examples: "Emilia Romagna" -> "emilia-romagna", "Emilia-Romagna" -> "emilia-romagna".
+  return String(value || '')
+    .trim()
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/_/g, '-')
+    .replace(/\s+/g, '-')
+    .replace(/-+/g, '-')
+    .replace(/^-|-$/g, '');
+}
+
+function _getRegionKeyFromProps(props) {
+  if (!props) return '';
+  return _normalizeRegionKey(props.region_name || props.regionName || props.region || props.regione || '');
+}
+
 function _cross(o, a, b) {
   // 2D cross product of OA and OB vectors, where points are [x, y].
   return (a[0] - o[0]) * (b[1] - o[1]) - (a[1] - o[1]) * (b[0] - o[0]);
@@ -134,36 +153,50 @@ const MapView = () => {
     fetchStations();
   }, []);
 
-  const selectedStationFeature = useMemo(() => {
+  const selectedStationFeatures = useMemo(() => {
     const features = stationsFc?.features || [];
-    if (!features.length) return null;
+    if (!features.length) return [];
+
+    const stationCodes = Array.isArray(filters.stationCodes)
+      ? filters.stationCodes.map((c) => String(c).trim().toLowerCase()).filter(Boolean)
+      : [];
+
+    if (stationCodes.length > 0) {
+      const hits = stationCodes
+        .map((code) => features.find((f) => String(f?.properties?.code || '').trim().toLowerCase() === code))
+        .filter(Boolean);
+      return hits;
+    }
 
     const stationCode = String(filters.stationCode || '').trim().toLowerCase();
     const stationQuery = String(filters.stationQuery || '').trim().toLowerCase();
 
     if (stationCode) {
       const hit = features.find((f) => String(f?.properties?.code || '').trim().toLowerCase() === stationCode);
-      if (hit) return hit;
+      if (hit) return [hit];
     }
 
-    if (!stationQuery) return null;
+    if (!stationQuery) return [];
 
     // Exact match on name/long_name/code to avoid zooming while typing.
-    return (
-      features.find((f) => {
+    const exact = features.find((f) => {
         const props = f?.properties || {};
         const name = String(props.name || '').trim().toLowerCase();
         const longName = String(props.long_name || props.longName || '').trim().toLowerCase();
         const code = String(props.code || '').trim().toLowerCase();
         return stationQuery === name || stationQuery === longName || stationQuery === code;
-      }) || null
-    );
-  }, [stationsFc, filters.stationCode, filters.stationQuery]);
+      });
+    return exact ? [exact] : [];
+  }, [stationsFc, filters.stationCodes, filters.stationCode, filters.stationQuery]);
+
+  const selectedStationFocusFeature = useMemo(() => {
+    return selectedStationFeatures.length === 1 ? selectedStationFeatures[0] : null;
+  }, [selectedStationFeatures]);
 
   const filteredStationsFc = useMemo(() => {
     const features = stationsFc?.features || [];
     if (!features.length) return stationsFc;
-    const selectedRegions = (filters.regions || []).map((r) => String(r).trim().toLowerCase());
+    const selectedRegions = (filters.regions || []).map(_normalizeRegionKey).filter(Boolean);
     const q = String(filters.stationQuery || '').trim().toLowerCase();
 
     if (selectedRegions.length === 0 && q.length < 2) return stationsFc;
@@ -172,7 +205,7 @@ const MapView = () => {
       const props = f?.properties || {};
       const name = String(props.name || props.long_name || '').toLowerCase();
       const code = String(props.code || '').toLowerCase();
-      const regionName = String(props.region_name || props.regionName || '').toLowerCase();
+      const regionName = _getRegionKeyFromProps(props);
 
       if (selectedRegions.length > 0 && !selectedRegions.includes(regionName)) return false;
 
@@ -187,16 +220,42 @@ const MapView = () => {
     return { type: 'FeatureCollection', features: out };
   }, [stationsFc, filters.regions, filters.stationQuery]);
 
-  const selectedStationLatLng = useMemo(() => {
-    const coords = selectedStationFeature?.geometry?.coordinates;
-    if (!coords || coords.length < 2) return null;
-    const [lng, lat] = coords;
-    if (typeof lat !== 'number' || typeof lng !== 'number') return null;
-    return [lat, lng];
-  }, [selectedStationFeature]);
+  const selectedStationLatLngs = useMemo(() => {
+    const pts = [];
+    for (const f of selectedStationFeatures) {
+      const coords = f?.geometry?.coordinates;
+      if (!coords || coords.length < 2) continue;
+      const [lng, lat] = coords;
+      if (typeof lat !== 'number' || typeof lng !== 'number') continue;
+      pts.push([lat, lng]);
+    }
+    return pts;
+  }, [selectedStationFeatures]);
+
+  const selectedStationsBounds = useMemo(() => {
+    if (selectedStationLatLngs.length < 2) return null;
+    return L.latLngBounds(selectedStationLatLngs);
+  }, [selectedStationLatLngs]);
+
+  const selectedStationsPolygon = useMemo(() => {
+    if (selectedStationFeatures.length < 3) return null;
+
+    const xy = [];
+    for (const f of selectedStationFeatures) {
+      const coords = f?.geometry?.coordinates;
+      if (!coords || coords.length < 2) continue;
+      const [lng, lat] = coords;
+      if (typeof lat !== 'number' || typeof lng !== 'number') continue;
+      xy.push([lng, lat]);
+    }
+
+    const hull = _convexHull(xy);
+    if (!hull || hull.length < 3) return null;
+    return hull.map(([lng, lat]) => [lat, lng]);
+  }, [selectedStationFeatures]);
 
   const selectedRegionsLower = useMemo(() => {
-    return (filters.regions || []).map((r) => String(r).trim().toLowerCase()).filter(Boolean);
+    return (filters.regions || []).map(_normalizeRegionKey).filter(Boolean);
   }, [filters.regions]);
 
   // Deterministic color per selected region based on selection order
@@ -214,7 +273,7 @@ const MapView = () => {
     const features = stationsFc?.features || [];
     const pts = features
       .filter((f) => {
-        const regionName = String(f?.properties?.region_name || f?.properties?.regionName || '').trim().toLowerCase();
+        const regionName = _getRegionKeyFromProps(f?.properties || {});
         return regionName && selectedRegionsLower.includes(regionName);
       })
       .map((f) => {
@@ -237,9 +296,7 @@ const MapView = () => {
     const ptsByRegion = new Map();
 
     for (const f of features) {
-      const regionName = String(f?.properties?.region_name || f?.properties?.regionName || '')
-        .trim()
-        .toLowerCase();
+      const regionName = _getRegionKeyFromProps(f?.properties || {});
       if (!regionName || !selectedRegionsLower.includes(regionName)) continue;
       const coords = f?.geometry?.coordinates;
       if (!coords || coords.length < 2) continue;
@@ -292,15 +349,32 @@ const MapView = () => {
               attribution="&copy; OpenStreetMap contributors"
             />
 
-            <AutoZoomToStation feature={selectedStationFeature} />
+            <AutoZoomToStation feature={selectedStationFocusFeature} />
+
+            <AutoFitToRegions enabled={selectedStationLatLngs.length > 1} bounds={selectedStationsBounds} />
+
+            {/* Polygon hull around selected stations (3+) */}
+            {selectedStationsPolygon && (
+              <Polygon
+                positions={selectedStationsPolygon}
+                pathOptions={{
+                  color: '#dc2626',
+                  weight: 2,
+                  dashArray: '6 6',
+                  fill: true,
+                  fillColor: '#dc2626',
+                  fillOpacity: 0.10,
+                }}
+              />
+            )}
 
             <AutoFitToRegions
-              enabled={selectedRegionsLower.length > 0 && !selectedStationLatLng}
+              enabled={selectedRegionsLower.length > 0 && selectedStationLatLngs.length === 0}
               bounds={selectedRegionsBounds}
             />
 
             {/* One polygon per selected region, each with its own color */}
-            {selectedRegionsLower.length > 0 && !selectedStationLatLng
+            {selectedRegionsLower.length > 0 && selectedStationLatLngs.length === 0
               ? selectedRegionsLower.map((name) => {
                   const poly = selectedRegionsPolygons[name];
                   if (!Array.isArray(poly) || poly.length < 3) return null;
@@ -322,20 +396,25 @@ const MapView = () => {
                 })
               : null}
 
-            {selectedStationLatLng ? (
-              <Marker position={selectedStationLatLng} icon={selectedStationIcon} zIndexOffset={1000}>
-                <Popup>
-                  {(() => {
-                    const props = selectedStationFeature?.properties || {};
-                    const title = props.name || props.long_name || props.code || 'Station';
-                    const code = props.code ? ` (${props.code})` : '';
-                    const regionText = props.region_name || props.regionName;
-                    const region = regionText ? ` — ${regionText}` : '';
-                    return `${title}${code}${region}`;
-                  })()}
-                </Popup>
-              </Marker>
-            ) : null}
+            {selectedStationFeatures.length
+              ? selectedStationFeatures.map((feature) => {
+                  const coords = feature?.geometry?.coordinates;
+                  if (!coords || coords.length < 2) return null;
+                  const [lng, lat] = coords;
+                  if (typeof lat !== 'number' || typeof lng !== 'number') return null;
+                  const props = feature?.properties || {};
+                  const title = props.name || props.long_name || props.code || 'Station';
+                  const code = props.code ? ` (${props.code})` : '';
+                  const regionText = props.region_name || props.regionName || props.region;
+                  const region = regionText ? ` — ${regionText}` : '';
+                  const key = String(props.code || `${lat},${lng}`);
+                  return (
+                    <Marker key={`sel-${key}`} position={[lat, lng]} icon={selectedStationIcon} zIndexOffset={1000}>
+                      <Popup>{`${title}${code}${region}`}</Popup>
+                    </Marker>
+                  );
+                })
+              : null}
 
             {filteredStationsFc?.features?.length ? (
               <GeoJSON
@@ -343,11 +422,7 @@ const MapView = () => {
                 pointToLayer={(feature, latlng) =>
                   (() => {
                     // Region name based inclusion and color
-                    const regionName = String(
-                      feature?.properties?.region_name || feature?.properties?.regionName || ''
-                    )
-                      .trim()
-                      .toLowerCase();
+                    const regionName = _getRegionKeyFromProps(feature?.properties || {});
                     const inSelectedRegion = selectedRegionsLower.includes(regionName);
 
                     if (inSelectedRegion) {
@@ -368,7 +443,7 @@ const MapView = () => {
                   const props = feature?.properties || {};
                   const title = props.name || props.long_name || props.code || 'Station';
                   const code = props.code ? ` (${props.code})` : '';
-                  const regionText = props.region_name || props.regionName;
+                  const regionText = props.region_name || props.regionName || props.region;
                   const region = regionText ? ` — ${regionText}` : '';
                   layer.bindPopup(`${title}${code}${region}`);
                 }}

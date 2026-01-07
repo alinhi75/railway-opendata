@@ -58,10 +58,12 @@ export const apiService = {
     // Hardcoded for now, can be moved to backend
     return Promise.resolve({
       data: [
-        { code: 'TRENITALIA_REG', label: 'Trenitalia Regional' },
-        { code: 'TRENITALIA_AV', label: 'Trenitalia High-Speed' },
-        { code: 'TRENORD', label: 'Trenord' },
-        { code: 'TPER', label: 'TPER' },
+        // Match UI labels requested (train types)
+        // 'ALL' is handled client-side as "no filter".
+        { code: 'TRENITALIA_REG', label: 'Regionali' },
+        { code: 'TRENITALIA_AV', label: 'Frecce' },
+        { code: 'TRENITALIA_IC', label: 'InterCity' },
+        { code: 'ALL', label: 'Generale' },
       ],
     });
   },
