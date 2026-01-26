@@ -28,15 +28,14 @@ WEBAPP_DATA_DIR = Path(__file__).parent.parent / "data"
 DATA_DIR = WEBAPP_DATA_DIR / "outputs"
 DATA_RAW_DIR = WEBAPP_DATA_DIR
 STATIONS_CSV_PATH = WEBAPP_DATA_DIR / "stations.csv"
-# Region code to name mapping (partial, based on Italian regions)
 REGION_CODE_TO_NAME: Dict[int, str] = {
-    1: "Piemonte",
-    2: "Valle d'Aosta",
-    3: "Lombardia",
-    4: "Trentino-Alto Adige",
-    5: "Veneto",
-    6: "Friuli Venezia Giulia",
-    7: "Liguria",
+    1: "Lombardia",
+    2: "Liguria",
+    3: "Piemonte",
+    4: "Valle d'Aosta",
+    5: "Trentino-Alto Adige",
+    6: "Veneto",
+    7: "Friuli Venezia Giulia",
     8: "Emilia-Romagna",
     9: "Toscana",
     10: "Umbria",
