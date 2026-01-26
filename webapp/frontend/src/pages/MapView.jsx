@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
+import ReactDOM from 'react-dom/client';
 import { MapContainer, TileLayer, GeoJSON, Marker, Popup, Polygon, useMap } from 'react-leaflet';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
@@ -6,6 +7,174 @@ import 'leaflet/dist/leaflet.css';
 import { apiService } from '../services/api';
 import Filters from '../components/Filters';
 import './MapView.css';
+
+// Enhanced Station Popup Component
+const StationPopup = ({ feature }) => {
+  const props = feature?.properties || {};
+  const title = props.name || props.long_name || props.code || 'Station';
+  const code = props.code || 'N/A';
+  const regionText = props.region_name || props.regionName || props.region || 'Unknown';
+  const shortName = props.short_name || props.shortName || '';
+  const coords = feature?.geometry?.coordinates;
+  
+  return (
+    <div style={{
+      fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
+      padding: '12px 0',
+      minWidth: '280px',
+    }}>
+      {/* Header */}
+      <div style={{
+        display: 'flex',
+        alignItems: 'flex-start',
+        justifyContent: 'space-between',
+        gap: '10px',
+        marginBottom: '12px',
+        paddingBottom: '10px',
+        borderBottom: '2px solid #e5e7eb',
+      }}>
+        <h3 style={{
+          margin: 0,
+          fontSize: '15px',
+          fontWeight: 700,
+          color: '#1f2937',
+          flex: 1,
+          lineHeight: 1.4,
+        }}>
+          {title}
+        </h3>
+        <span style={{
+          background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+          color: 'white',
+          padding: '4px 10px',
+          borderRadius: '12px',
+          fontSize: '11px',
+          fontWeight: 600,
+          whiteSpace: 'nowrap',
+          flexShrink: 0,
+        }}>
+          {code}
+        </span>
+      </div>
+
+      {/* Alternate Name */}
+      {shortName && (
+        <div style={{
+          display: 'flex',
+          flexDirection: 'column',
+          marginBottom: '10px',
+          fontSize: '13px',
+        }}>
+          <span style={{
+            fontWeight: 600,
+            color: '#6b7280',
+            marginBottom: '3px',
+            textTransform: 'uppercase',
+            letterSpacing: '0.5px',
+            fontSize: '10px',
+          }}>
+            Alternate Name
+          </span>
+          <span style={{ color: '#1f2937', fontWeight: 500 }}>
+            {shortName}
+          </span>
+        </div>
+      )}
+
+      {/* Region */}
+      <div style={{
+        display: 'flex',
+        flexDirection: 'column',
+        marginBottom: '10px',
+        fontSize: '13px',
+      }}>
+        <span style={{
+          fontWeight: 600,
+          color: '#6b7280',
+          marginBottom: '3px',
+          textTransform: 'uppercase',
+          letterSpacing: '0.5px',
+          fontSize: '10px',
+        }}>
+          📍 Region
+        </span>
+        <span style={{
+          display: 'inline-flex',
+          alignItems: 'center',
+          background: 'rgba(102, 126, 234, 0.1)',
+          color: '#667eea',
+          padding: '4px 8px',
+          borderRadius: '6px',
+          fontWeight: 600,
+          width: 'fit-content',
+        }}>
+          {regionText}
+        </span>
+      </div>
+
+      {/* Coordinates */}
+      {coords && coords.length >= 2 && (
+        <div style={{
+          display: 'grid',
+          gridTemplateColumns: '1fr 1fr',
+          gap: '8px',
+          marginTop: '10px',
+          paddingTop: '8px',
+          borderTop: '1px solid #f3f4f6',
+        }}>
+          <div style={{
+            display: 'flex',
+            flexDirection: 'column',
+            fontSize: '13px',
+          }}>
+            <span style={{
+              fontWeight: 600,
+              color: '#6b7280',
+              marginBottom: '2px',
+              textTransform: 'uppercase',
+              letterSpacing: '0.5px',
+              fontSize: '10px',
+            }}>
+              Latitude
+            </span>
+            <span style={{
+              color: '#1f2937',
+              fontWeight: 500,
+              fontSize: '12px',
+              fontFamily: 'monospace',
+            }}>
+              {coords[1].toFixed(6)}
+            </span>
+          </div>
+          <div style={{
+            display: 'flex',
+            flexDirection: 'column',
+            fontSize: '13px',
+          }}>
+            <span style={{
+              fontWeight: 600,
+              color: '#6b7280',
+              marginBottom: '2px',
+              textTransform: 'uppercase',
+              letterSpacing: '0.5px',
+              fontSize: '10px',
+            }}>
+              Longitude
+            </span>
+            <span style={{
+              color: '#1f2937',
+              fontWeight: 500,
+              fontSize: '12px',
+              fontFamily: 'monospace',
+            }}>
+              {coords[0].toFixed(6)}
+            </span>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
 
 const ITALY_CENTER = [41.890, 12.492];
 const STATION_FOCUS_ZOOM = 13;
@@ -371,14 +540,12 @@ const MapView = () => {
                   const [lng, lat] = coords;
                   if (typeof lat !== 'number' || typeof lng !== 'number') return null;
                   const props = feature?.properties || {};
-                  const title = props.name || props.long_name || props.code || 'Station';
-                  const code = props.code ? ` (${props.code})` : '';
-                  const regionText = props.region_name || props.regionName || props.region;
-                  const region = regionText ? ` — ${regionText}` : '';
                   const key = String(props.code || `${lat},${lng}`);
                   return (
                     <Marker key={`sel-${key}`} position={[lat, lng]} icon={selectedStationIcon} zIndexOffset={1000}>
-                      <Popup>{`${title}${code}${region}`}</Popup>
+                      <Popup maxWidth={350} className="station-popup">
+                        <StationPopup feature={feature} />
+                      </Popup>
                     </Marker>
                   );
                 })
@@ -410,10 +577,54 @@ const MapView = () => {
                 onEachFeature={(feature, layer) => {
                   const props = feature?.properties || {};
                   const title = props.name || props.long_name || props.code || 'Station';
-                  const code = props.code ? ` (${props.code})` : '';
-                  const regionText = props.region_name || props.regionName || props.region;
-                  const region = regionText ? ` — ${regionText}` : '';
-                  layer.bindPopup(`${title}${code}${region}`);
+                  const code = props.code || 'N/A';
+                  const regionText = props.region_name || props.regionName || props.region || 'Unknown';
+                  const shortName = props.short_name || props.shortName || '';
+                  const coords = feature?.geometry?.coordinates;
+                  
+                  // Build HTML popup content directly
+                  let popupHtml = `
+                    <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; padding: 12px 0; min-width: 280px;">
+                      <div style="display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; margin-bottom: 12px; padding-bottom: 10px; border-bottom: 2px solid #e5e7eb;">
+                        <h3 style="margin: 0; font-size: 15px; font-weight: 700; color: #1f2937; flex: 1; line-height: 1.4;">${title}</h3>
+                        <span style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 4px 10px; border-radius: 12px; font-size: 11px; font-weight: 600; white-space: nowrap; flex-shrink: 0;">${code}</span>
+                      </div>
+                  `;
+                  
+                  if (shortName) {
+                    popupHtml += `
+                      <div style="display: flex; flex-direction: column; margin-bottom: 10px; font-size: 13px;">
+                        <span style="font-weight: 600; color: #6b7280; margin-bottom: 3px; text-transform: uppercase; letter-spacing: 0.5px; font-size: 10px;">Alternate Name</span>
+                        <span style="color: #1f2937; font-weight: 500;">${shortName}</span>
+                      </div>
+                    `;
+                  }
+                  
+                  popupHtml += `
+                    <div style="display: flex; flex-direction: column; margin-bottom: 10px; font-size: 13px;">
+                      <span style="font-weight: 600; color: #6b7280; margin-bottom: 3px; text-transform: uppercase; letter-spacing: 0.5px; font-size: 10px;">📍 Region</span>
+                      <span style="display: inline-flex; align-items: center; background: rgba(102, 126, 234, 0.1); color: #667eea; padding: 4px 8px; border-radius: 6px; font-weight: 600; width: fit-content;">${regionText}</span>
+                    </div>
+                  `;
+                  
+                  if (coords && coords.length >= 2) {
+                    popupHtml += `
+                      <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 10px; padding-top: 8px; border-top: 1px solid #f3f4f6;">
+                        <div style="display: flex; flex-direction: column; font-size: 13px;">
+                          <span style="font-weight: 600; color: #6b7280; margin-bottom: 2px; text-transform: uppercase; letter-spacing: 0.5px; font-size: 10px;">Latitude</span>
+                          <span style="color: #1f2937; font-weight: 500; font-size: 12px; font-family: monospace;">${coords[1].toFixed(6)}</span>
+                        </div>
+                        <div style="display: flex; flex-direction: column; font-size: 13px;">
+                          <span style="font-weight: 600; color: #6b7280; margin-bottom: 2px; text-transform: uppercase; letter-spacing: 0.5px; font-size: 10px;">Longitude</span>
+                          <span style="color: #1f2937; font-weight: 500; font-size: 12px; font-family: monospace;">${coords[0].toFixed(6)}</span>
+                        </div>
+                      </div>
+                    `;
+                  }
+                  
+                  popupHtml += '</div>';
+                  
+                  layer.bindPopup(popupHtml, { maxWidth: 350, className: 'station-popup' });
                 }}
               />
             ) : null}

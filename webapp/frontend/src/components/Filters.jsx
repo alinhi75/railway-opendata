@@ -4,7 +4,6 @@ import './Filters.css';
 
 /**
  * Filters Component
- * US-7: Date range picker
  * US-8: Company selector
  * US-9: Region/Station search
  *
@@ -13,8 +12,6 @@ import './Filters.css';
  * - initialFilters: optional initial filter values
  */
 const Filters = ({ onChange, initialFilters = {} }) => {
-  const [startDate, setStartDate] = useState(initialFilters.startDate || '');
-  const [endDate, setEndDate] = useState(initialFilters.endDate || '');
   const [companies, setCompanies] = useState(initialFilters.companies || []);
   const [regions, setRegions] = useState(initialFilters.regions || []);
   const [stationQuery, setStationQuery] = useState(initialFilters.stationQuery || '');
@@ -27,13 +24,6 @@ const Filters = ({ onChange, initialFilters = {} }) => {
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const [mouseOverSuggestions, setMouseOverSuggestions] = useState(false); // Track if mouse is over suggestions to prevent closing on blur
   const mouseDownOnSuggestions = useRef(false); // Track if mouse is down on suggestions to prevent closing on blur
-
-  // Presets for quick selection
-  const presets = useMemo(() => ([
-    { label: 'Last 7 days', range: { start: offsetDays(7), end: today() } },
-    { label: 'Last 30 days', range: { start: offsetDays(30), end: today() } },
-    { label: 'Last 90 days', range: { start: offsetDays(90), end: today() } },
-  ]), []);
 
   useEffect(() => {
     // Load available companies and regions
@@ -125,8 +115,6 @@ const Filters = ({ onChange, initialFilters = {} }) => {
   const applyFilters = () => {
     // Combine all active filters
     const filters = {
-      startDate: startDate || null,
-      endDate: endDate || null,
       companies: companies.length > 0 ? companies : null,
       regions: regions.length > 0 ? regions : null,
       stationQuery: stationQuery || null,
@@ -142,18 +130,11 @@ const Filters = ({ onChange, initialFilters = {} }) => {
   };
 
   const clearFilters = () => {
-    setStartDate('');
-    setEndDate('');
     setCompanies([]);
     setRegions([]);
     setStationQuery('');
     setSelectedStations([]);
     onChange?.({});
-  };
-
-  const setPreset = (range) => {
-    setStartDate(range.start);
-    setEndDate(range.end);
   };
 
   const toggleCompany = (code) => {
@@ -171,7 +152,6 @@ const Filters = ({ onChange, initialFilters = {} }) => {
 
   // Count active filters for display
   const activeFilterCount = [
-    startDate || endDate,
     companies.length > 0,
     regions.length > 0,
     selectedStations.length > 0 || stationQuery,
@@ -191,11 +171,6 @@ const Filters = ({ onChange, initialFilters = {} }) => {
       {activeFilterCount > 0 && (
         <div className="active-filters-summary">
           <strong>Active Filters:</strong>
-          {(startDate || endDate) && (
-            <span className="filter-tag">
-              📅 {startDate || '...'} → {endDate || '...'}
-            </span>
-          )}
           {companies.length > 0 && (
             <span className="filter-tag">
               🏢 {companies.length} {companies.length === 1 ? 'company' : 'companies'}
@@ -213,29 +188,6 @@ const Filters = ({ onChange, initialFilters = {} }) => {
           )}
         </div>
       )}
-
-      {/* Date Range */}
-      <section className="filters-section">
-        <h3>📅 Date Range</h3>
-        <div className="date-grid">
-          <div className="date-input">
-            <label>Start Date</label>
-            <input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} />
-          </div>
-          <div className="date-input">
-            <label>End Date</label>
-            <input type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)} />
-          </div>
-        </div>
-
-        <div className="preset-grid">
-          {presets.map((p) => (
-            <button key={p.label} className="btn btn-preset" onClick={() => setPreset(p.range)}>
-              {p.label}
-            </button>
-          ))}
-        </div>
-      </section>
 
       {/* Station Search */}
       <section className="filters-section">
@@ -361,23 +313,5 @@ const Filters = ({ onChange, initialFilters = {} }) => {
     </div>
   );
 };
-
-// Helpers
-function today() {
-  const d = new Date();
-  const yyyy = d.getFullYear();
-  const mm = String(d.getMonth() + 1).padStart(2, '0');
-  const dd = String(d.getDate()).padStart(2, '0');
-  return `${yyyy}-${mm}-${dd}`;
-}
-
-function offsetDays(n) {
-  const d = new Date();
-  d.setDate(d.getDate() - n);
-  const yyyy = d.getFullYear();
-  const mm = String(d.getMonth() + 1).padStart(2, '0');
-  const dd = String(d.getDate()).padStart(2, '0');
-  return `${yyyy}-${mm}-${dd}`;
-}
 
 export default Filters;
