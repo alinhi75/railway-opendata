@@ -237,23 +237,6 @@ const MapView = () => {
     return L.latLngBounds(selectedStationLatLngs);
   }, [selectedStationLatLngs]);
 
-  const selectedStationsPolygon = useMemo(() => {
-    if (selectedStationFeatures.length < 3) return null;
-
-    const xy = [];
-    for (const f of selectedStationFeatures) {
-      const coords = f?.geometry?.coordinates;
-      if (!coords || coords.length < 2) continue;
-      const [lng, lat] = coords;
-      if (typeof lat !== 'number' || typeof lng !== 'number') continue;
-      xy.push([lng, lat]);
-    }
-
-    const hull = _convexHull(xy);
-    if (!hull || hull.length < 3) return null;
-    return hull.map(([lng, lat]) => [lat, lng]);
-  }, [selectedStationFeatures]);
-
   const selectedRegionsLower = useMemo(() => {
     return (filters.regions || []).map(_normalizeRegionKey).filter(Boolean);
   }, [filters.regions]);
@@ -352,21 +335,6 @@ const MapView = () => {
             <AutoZoomToStation feature={selectedStationFocusFeature} />
 
             <AutoFitToRegions enabled={selectedStationLatLngs.length > 1} bounds={selectedStationsBounds} />
-
-            {/* Polygon hull around selected stations (3+) */}
-            {selectedStationsPolygon && (
-              <Polygon
-                positions={selectedStationsPolygon}
-                pathOptions={{
-                  color: '#dc2626',
-                  weight: 2,
-                  dashArray: '6 6',
-                  fill: true,
-                  fillColor: '#dc2626',
-                  fillOpacity: 0.10,
-                }}
-              />
-            )}
 
             <AutoFitToRegions
               enabled={selectedRegionsLower.length > 0 && selectedStationLatLngs.length === 0}

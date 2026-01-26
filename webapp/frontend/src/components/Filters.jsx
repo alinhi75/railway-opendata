@@ -115,40 +115,30 @@ const Filters = ({ onChange, initialFilters = {} }) => {
       if (prev.some((st) => st.code === s.code)) return prev;
       return [...prev, s];
     });
-    // Do not clear the search query after selection
-    onChange?.({
-      startDate: startDate || null,
-      endDate: endDate || null,
-      companies,
-      regions,
-      stationQuery: null,
-      stationCodes: [...selectedStations.map(st => st.code), s.code],
-    });
+    // Station will be included when Apply is clicked
   };
 
   const removeSelectedStation = (code) => {
     setSelectedStations((prev) => prev.filter((s) => s.code !== code));
-    const newSelected = selectedStations.filter((s) => s.code !== code);
-    onChange?.({
-      startDate: startDate || null,
-      endDate: endDate || null,
-      companies,
-      regions,
-      stationQuery: null,
-      stationCodes: newSelected.map(st => st.code),
-    });
   };
 
   const applyFilters = () => {
+    // Combine all active filters
     const filters = {
       startDate: startDate || null,
       endDate: endDate || null,
-      companies,
-      regions,
+      companies: companies.length > 0 ? companies : null,
+      regions: regions.length > 0 ? regions : null,
       stationQuery: stationQuery || null,
-      stationCodes: selectedStations.map((s) => s.code).filter(Boolean),
+      stationCodes: selectedStations.length > 0 ? selectedStations.map((s) => s.code).filter(Boolean) : null,
     };
-    onChange?.(filters);
+    
+    // Remove null values for cleaner params
+    const cleanedFilters = Object.fromEntries(
+      Object.entries(filters).filter(([_, v]) => v !== null)
+    );
+    
+    onChange?.(cleanedFilters);
   };
 
   const clearFilters = () => {
@@ -179,15 +169,50 @@ const Filters = ({ onChange, initialFilters = {} }) => {
     setRegions((prev) => prev.includes(region) ? prev.filter(r => r !== region) : [...prev, region]);
   };
 
+  // Count active filters for display
+  const activeFilterCount = [
+    startDate || endDate,
+    companies.length > 0,
+    regions.length > 0,
+    selectedStations.length > 0 || stationQuery,
+  ].filter(Boolean).length;
+
   return (
     <div className="filters">
       <div className="filters-header">
-        <h2>Filters</h2>
+        <h2>Filters {activeFilterCount > 0 && <span className="filter-badge">{activeFilterCount}</span>}</h2>
         <div className="actions">
-          <button className="btn btn-secondary" onClick={clearFilters}>Clear</button>
-          <button className="btn btn-primary" onClick={applyFilters}>Apply</button>
+          <button className="btn btn-secondary" onClick={clearFilters} disabled={activeFilterCount === 0}>Clear All</button>
+          <button className="btn btn-primary" onClick={applyFilters}>Apply Filters</button>
         </div>
       </div>
+      
+      {/* Active Filters Summary */}
+      {activeFilterCount > 0 && (
+        <div className="active-filters-summary">
+          <strong>Active Filters:</strong>
+          {(startDate || endDate) && (
+            <span className="filter-tag">
+              📅 {startDate || '...'} → {endDate || '...'}
+            </span>
+          )}
+          {companies.length > 0 && (
+            <span className="filter-tag">
+              🏢 {companies.length} {companies.length === 1 ? 'company' : 'companies'}
+            </span>
+          )}
+          {regions.length > 0 && (
+            <span className="filter-tag">
+              🗺️ {regions.length} {regions.length === 1 ? 'region' : 'regions'}
+            </span>
+          )}
+          {selectedStations.length > 0 && (
+            <span className="filter-tag">
+              🚉 {selectedStations.length} {selectedStations.length === 1 ? 'station' : 'stations'}
+            </span>
+          )}
+        </div>
+      )}
 
       {/* Date Range */}
       <section className="filters-section">

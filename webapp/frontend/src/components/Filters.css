@@ -18,6 +18,47 @@
   margin: 0;
   font-size: 20px;
   color: #1f2937;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.filter-badge {
+  background: #667eea;
+  color: white;
+  font-size: 12px;
+  padding: 2px 8px;
+  border-radius: 12px;
+  font-weight: 600;
+}
+
+.active-filters-summary {
+  background: #f3f4f6;
+  padding: 12px;
+  border-radius: 8px;
+  margin-bottom: 20px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  font-size: 14px;
+}
+
+.active-filters-summary strong {
+  color: #374151;
+  margin-right: 4px;
+}
+
+.filter-tag {
+  background: white;
+  padding: 4px 12px;
+  border-radius: 6px;
+  font-size: 13px;
+  color: #1f2937;
+  border: 1px solid #d1d5db;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
 }
 
 .actions {
@@ -37,6 +78,13 @@
 .btn:hover {
   transform: translateY(-2px);
   box-shadow: 0 6px 16px rgba(102, 126, 234, 0.25);
+}
+
+.btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  transform: none;
+  box-shadow: none;
 }
 
 .btn-primary {

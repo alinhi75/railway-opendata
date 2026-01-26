@@ -34,6 +34,28 @@ export const apiService = {
    */
   getDayTrainCount: (params = {}) => api.get('/stats/day-train-count', { params }),
 
+  /**
+   * Get monthly train count chart (US-3: Service Frequency)
+   * Returns: path to precomputed monthly chart
+   */
+  getDayTrainCountMonthly: (year, month) => api.get('/stats/day-train-count/monthly', { 
+    params: { year, month } 
+  }),
+
+  /**
+   * Get monthly delay boxplot (US-2: Delay Patterns)
+   * Returns: path to precomputed monthly boxplot
+   */
+  getDelayBoxplotMonthly: (year, month) => api.get('/stats/delay-boxplot/monthly', { 
+    params: { year, month } 
+  }),
+
+  /**
+   * Get available months for monthly statistics
+   * Returns: list of {year, month, key} objects
+   */
+  getAvailableMonths: () => api.get('/stats/available-months'),
+
   // ===== MAP ENDPOINTS (US-4) =====
 
   /**
