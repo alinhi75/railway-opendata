@@ -36,5 +36,3 @@ Frontend will run at: http://localhost:5173
 2. Start backend API
 3. Start frontend dev server
 4. Open browser to http://localhost:5173
-
-See [../docs/WEBAPP_SETUP_GUIDE.md](../docs/WEBAPP_SETUP_GUIDE.md) for detailed setup instructions.

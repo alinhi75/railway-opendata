@@ -32,6 +32,25 @@
   font-weight: 600;
 }
 
+.range-banner {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: white;
+  padding: 12px 14px;
+  border-radius: 8px;
+  margin-bottom: 16px;
+  font-size: 14px;
+}
+
+.range-text {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.range-text strong {
+  font-weight: 600;
+}
+
 .active-filters-summary {
   background: #f3f4f6;
   padding: 12px;

@@ -522,6 +522,9 @@ def get_describe_stats(
         except Exception:
             return None
 
+    # Count unique trains instead of total rows (stops)
+    unique_train_count = df['train_hash'].nunique() if 'train_hash' in df.columns else None
+
     payload: Dict[str, Any] = {
         "available_min_date": available_min,
         "available_max_date": available_max,
@@ -530,7 +533,7 @@ def get_describe_stats(
         "start_date": s.isoformat(),
         "end_date": e.isoformat(),
         "column": preferred_col,
-        "count": _as_number(summary.get("count")),
+        "count": unique_train_count,  # Count unique trains, not stops
         "mean": _as_number(summary.get("mean")),
         "std": _as_number(summary.get("std")),
         "min": _as_number(summary.get("min")),

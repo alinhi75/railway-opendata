@@ -19,6 +19,7 @@ const Filters = ({ onChange, initialFilters = {} }) => {
 
   const [availableCompanies, setAvailableCompanies] = useState([]);
   const [availableRegions, setAvailableRegions] = useState([]);
+  const [availableDateRange, setAvailableDateRange] = useState(null);
   const [stationSuggestions, setStationSuggestions] = useState([]);
   const [stationLoading, setStationLoading] = useState(false);
   const [dropdownOpen, setDropdownOpen] = useState(false);
@@ -26,7 +27,7 @@ const Filters = ({ onChange, initialFilters = {} }) => {
   const mouseDownOnSuggestions = useRef(false); // Track if mouse is down on suggestions to prevent closing on blur
 
   useEffect(() => {
-    // Load available companies and regions
+    // Load available companies, regions, and date range
     const fetchFiltersMeta = async () => {
       try {
         const [companiesRes, regionsRes] = await Promise.all([
@@ -35,6 +36,19 @@ const Filters = ({ onChange, initialFilters = {} }) => {
         ]);
         setAvailableCompanies(companiesRes.data);
         setAvailableRegions(regionsRes.data);
+        
+        // Try to fetch available date range
+        try {
+          const statsRes = await apiService.getDescribeStats();
+          if (statsRes.data?.available_min_date && statsRes.data?.available_max_date) {
+            setAvailableDateRange({
+              start: statsRes.data.available_min_date,
+              end: statsRes.data.available_max_date,
+            });
+          }
+        } catch (err) {
+          console.warn('Could not fetch date range from stats:', err);
+        }
       } catch (err) {
         console.error('Failed to load filter metadata', err);
       }
@@ -166,6 +180,15 @@ const Filters = ({ onChange, initialFilters = {} }) => {
           <button className="btn btn-primary" onClick={applyFilters}>Apply Filters</button>
         </div>
       </div>
+
+      {/* Available Date Range */}
+      {availableDateRange && (
+        <div className="range-banner">
+          <div className="range-text">
+            📅 Data available: <strong>{availableDateRange.start}</strong> → <strong>{availableDateRange.end}</strong>
+          </div>
+        </div>
+      )}
       
       {/* Active Filters Summary */}
       {activeFilterCount > 0 && (
