@@ -9,3 +9,32 @@
 .onepage-section + .onepage-section {
   margin-top: 48px;
 }
+
+#map .onepage-container {
+  max-width: 1400px;
+  margin: 0 auto;
+  padding: 24px 32px;
+  box-sizing: border-box;
+}
+
+#map .dashboard-header {
+  position: relative;
+  z-index: 1;
+}
+
+#map .map-section-content .map-page {
+  max-width: none;
+  margin: 0;
+  padding: 0;
+}
+
+#statistics .statistics-page {
+  max-width: 1400px;
+  margin: 0 auto;
+  padding: 24px 32px;
+  box-sizing: border-box;
+}
+
+.map-section-content > .filters {
+  margin-bottom: 16px;
+}

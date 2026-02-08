@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { apiService } from '../services/api';
 import SummaryCard from '../components/SummaryCard';
 import './DashboardSection.css';
@@ -7,16 +7,36 @@ import './DashboardSection.css';
  * Dashboard Section
  * Formerly: pages/Dashboard
  */
-const DashboardSection = () => {
+const DashboardSection = ({ filters = {} }) => {
   const [stats, setStats] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+
+  const apiParams = useMemo(() => {
+    const params = {};
+    if (filters.startDate && filters.endDate) {
+      params.start_date = filters.startDate;
+      params.end_date = filters.endDate;
+    }
+    if (Array.isArray(filters.companies) && filters.companies.length > 0) {
+      params.railway_companies = filters.companies.join(',');
+    }
+    if (Array.isArray(filters.regions) && filters.regions.length > 0) {
+      params.regions = filters.regions.join(',');
+    }
+    if (filters.stationQuery) {
+      params.station_query = filters.stationQuery;
+    } else if (Array.isArray(filters.stationCodes) && filters.stationCodes.length > 0) {
+      params.station_query = filters.stationCodes.join(',');
+    }
+    return params;
+  }, [filters]);
 
   useEffect(() => {
     const fetchStats = async () => {
       try {
         setLoading(true);
-        const response = await apiService.getDescribeStats();
+        const response = await apiService.getDescribeStats(apiParams);
         setStats(response.data);
         setError(null);
       } catch (err) {
@@ -28,7 +48,7 @@ const DashboardSection = () => {
     };
 
     fetchStats();
-  }, []);
+  }, [apiParams]);
 
   const getMetric = () => {
     if (!stats) return { mean: 'N/A', std: 'N/A', min: 'N/A', max: 'N/A', count: 0 };
@@ -64,12 +84,6 @@ const DashboardSection = () => {
           <div className="header-content">
             <h1>📊 Railway Performance Dashboard</h1>
             <p className="header-subtitle">Real-time insights into Italian railway system performance</p>
-            {stats?.start_date && stats?.end_date && (
-              <div className="data-period">
-                <span className="period-icon">📅</span>
-                Data Period: <strong>{stats.start_date}</strong> → <strong>{stats.end_date}</strong>
-              </div>
-            )}
           </div>
         </div>
 
@@ -154,23 +168,6 @@ const DashboardSection = () => {
               </div>
             </section>
 
-            <section className="quick-links-section">
-              <h2 className="section-title">Explore More</h2>
-              <div className="links-grid">
-                <a href="#statistics" className="link-card">
-                  <div className="link-icon">📈</div>
-                  <h3>View Detailed Statistics</h3>
-                  <p>Explore delay distributions, service frequency, and more</p>
-                  <span className="link-arrow">→</span>
-                </a>
-                <a href="#map" className="link-card">
-                  <div className="link-icon">🗺️</div>
-                  <h3>Interactive Map</h3>
-                  <p>See train movements and delays across Italy</p>
-                  <span className="link-arrow">→</span>
-                </a>
-              </div>
-            </section>
           </>
         )}
       </div>

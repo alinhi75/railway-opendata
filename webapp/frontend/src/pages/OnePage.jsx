@@ -1,6 +1,7 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useLocation } from 'react-router-dom';
 
+import Filters from '../components/Filters';
 import DashboardSection from '../sections/DashboardSection';
 import StatisticsSection from '../sections/StatisticsSection';
 import MapSection from '../sections/MapSection';
@@ -22,6 +23,7 @@ function scrollToHash(hash) {
 
 const OnePage = () => {
   const location = useLocation();
+  const [appliedFilters, setAppliedFilters] = useState({});
 
   useEffect(() => {
     if (location.hash) {
@@ -33,15 +35,27 @@ const OnePage = () => {
   return (
     <div className="onepage" id="top">
       <section id="dashboard" className="onepage-section">
-        <DashboardSection />
-      </section>
-
-      <section id="statistics" className="onepage-section">
-        <StatisticsSection />
+        <DashboardSection filters={appliedFilters} />
       </section>
 
       <section id="map" className="onepage-section">
-        <MapSection />
+        <div className="onepage-container">
+          <div className="dashboard-header">
+            <div className="header-content">
+              <h1>🗺️ Station Map</h1>
+              <p className="header-subtitle">Explore stations across Italy</p>
+            </div>
+          </div>
+
+          <div className="map-section-content">
+            <Filters onChange={setAppliedFilters} initialFilters={appliedFilters} />
+            <MapSection filters={appliedFilters} />
+          </div>
+        </div>
+      </section>
+
+      <section id="statistics" className="onepage-section">
+        <StatisticsSection filters={appliedFilters} />
       </section>
 
       <section id="about" className="onepage-section">
