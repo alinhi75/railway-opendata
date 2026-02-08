@@ -1,0 +1,31 @@
+services:
+  backend:
+    command:
+      [
+        "python",
+        "-m",
+        "uvicorn",
+        "main:app",
+        "--reload",
+        "--host",
+        "0.0.0.0",
+        "--port",
+        "8000",
+        "--reload-dir",
+        "/app/webapp/backend",
+        "--reload-dir",
+        "/app/src",
+      ]
+    volumes:
+      - ./data:/app/webapp/data
+      - ./backend:/app/webapp/backend
+      - ../src:/app/src
+
+  frontend:
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+    environment:
+      - VITE_API_URL=http://localhost:8000
+      # Improves file change detection on some Docker Desktop setups
+      - CHOKIDAR_USEPOLLING=true

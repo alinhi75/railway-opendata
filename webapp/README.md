@@ -17,6 +17,17 @@ docker compose up --build
 
 Data must be present under `webapp/data/` (see backend section below).
 
+### Using Docker (dev hot-reload)
+
+From the `webapp/` folder:
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.dev.yml up
+```
+
+- Backend auto-reloads on code changes (`uvicorn --reload`).
+- Frontend uses Vite HMR and reflects changes without rebuilding.
+
 ### Backend (FastAPI)
 ```bash
 cd backend
