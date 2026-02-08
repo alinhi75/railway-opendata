@@ -24,6 +24,33 @@ function scrollToHash(hash) {
 const OnePage = () => {
   const location = useLocation();
   const [appliedFilters, setAppliedFilters] = useState({});
+  const [initialFiltersFromUrl, setInitialFiltersFromUrl] = useState({});
+
+  useEffect(() => {
+    // Parse URL query parameters for initial filters
+    const params = new URLSearchParams(location.search);
+    const urlFilters = {};
+    
+    const stationCode = params.get('stationCode');
+    if (stationCode) {
+      urlFilters.stationCodes = [stationCode];
+    }
+    
+    const startDate = params.get('startDate');
+    if (startDate) {
+      urlFilters.startDate = startDate;
+    }
+    
+    const endDate = params.get('endDate');
+    if (endDate) {
+      urlFilters.endDate = endDate;
+    }
+    
+    if (Object.keys(urlFilters).length > 0) {
+      setInitialFiltersFromUrl(urlFilters);
+      setAppliedFilters(urlFilters);
+    }
+  }, [location.search]);
 
   useEffect(() => {
     if (location.hash) {
@@ -48,7 +75,7 @@ const OnePage = () => {
           </div>
 
           <div className="map-section-content">
-            <Filters onChange={setAppliedFilters} initialFilters={appliedFilters} />
+            <Filters onChange={setAppliedFilters} initialFilters={initialFiltersFromUrl} />
             <MapSection filters={appliedFilters} />
           </div>
         </div>

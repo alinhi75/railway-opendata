@@ -1,5 +1,5 @@
-import React, { useEffect, useMemo, useState } from 'react';
-import ReactDOM from 'react-dom/client';
+import React, { useEffect, useMemo, useState, useRef } from 'react';
+import { createRoot } from 'react-dom/client';
 import { MapContainer, TileLayer, GeoJSON, Marker, Popup, Polygon, useMap } from 'react-leaflet';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
@@ -16,181 +16,75 @@ const StationPopup = ({ feature }) => {
   const shortName = props.short_name || props.shortName || '';
   const coords = feature?.geometry?.coordinates;
 
+  const handleViewStatistics = () => {
+    // Scroll to statistics section in the same page
+    const statsSection = document.getElementById('statistics');
+    if (statsSection) {
+      const headerOffset = 90;
+      const elementPosition = statsSection.getBoundingClientRect().top;
+      const offsetPosition = elementPosition + window.pageYOffset - headerOffset;
+      
+      window.scrollTo({
+        top: offsetPosition,
+        behavior: 'smooth'
+      });
+      
+      // Update URL without reload
+      window.history.pushState({}, '', `#statistics?stationCode=${encodeURIComponent(code)}`);
+    }
+  };
+
   return (
-    <div
-      style={{
-        fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
-        padding: '12px 0',
-        minWidth: '280px',
-      }}
-    >
-      <div
-        style={{
-          display: 'flex',
-          alignItems: 'flex-start',
-          justifyContent: 'space-between',
-          gap: '10px',
-          marginBottom: '12px',
-          paddingBottom: '10px',
-          borderBottom: '2px solid #e5e7eb',
-        }}
-      >
-        <h3
-          style={{
-            margin: 0,
-            fontSize: '15px',
-            fontWeight: 700,
-            color: '#1f2937',
-            flex: 1,
-            lineHeight: 1.4,
-          }}
-        >
-          {title}
-        </h3>
-        <span
-          style={{
-            background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
-            color: 'white',
-            padding: '4px 10px',
-            borderRadius: '12px',
-            fontSize: '11px',
-            fontWeight: 600,
-            whiteSpace: 'nowrap',
-            flexShrink: 0,
-          }}
-        >
-          {code}
-        </span>
+    <div className="station-popup-enhanced">
+      <div className="station-popup-header-enhanced">
+        <div className="station-popup-icon">🚉</div>
+        <div className="station-popup-title-group">
+          <div className="station-popup-title-row">
+            <h3 className="station-popup-title-enhanced">{title}</h3>
+            <span className="station-popup-code-enhanced">{code}</span>
+          </div>
+          {shortName && <div className="station-popup-subtitle">{shortName}</div>}
+        </div>
       </div>
 
-      {shortName && (
-        <div
-          style={{
-            display: 'flex',
-            flexDirection: 'column',
-            marginBottom: '10px',
-            fontSize: '13px',
-          }}
-        >
-          <span
-            style={{
-              fontWeight: 600,
-              color: '#6b7280',
-              marginBottom: '3px',
-              textTransform: 'uppercase',
-              letterSpacing: '0.5px',
-              fontSize: '10px',
-            }}
-          >
-            Alternate Name
-          </span>
-          <span style={{ color: '#1f2937', fontWeight: 500 }}>{shortName}</span>
+      <div className="station-popup-info-grid">
+        <div className="station-popup-info-card">
+          <div className="station-popup-info-icon">📍</div>
+          <div className="station-popup-info-content">
+            <div className="station-popup-info-label">Region</div>
+            <div className="station-popup-info-value">{regionText}</div>
+          </div>
         </div>
-      )}
 
-      <div
-        style={{
-          display: 'flex',
-          flexDirection: 'column',
-          marginBottom: '10px',
-          fontSize: '13px',
-        }}
-      >
-        <span
-          style={{
-            fontWeight: 600,
-            color: '#6b7280',
-            marginBottom: '3px',
-            textTransform: 'uppercase',
-            letterSpacing: '0.5px',
-            fontSize: '10px',
-          }}
-        >
-          📍 Region
-        </span>
-        <span
-          style={{
-            display: 'inline-flex',
-            alignItems: 'center',
-            background: 'rgba(102, 126, 234, 0.1)',
-            color: '#667eea',
-            padding: '4px 8px',
-            borderRadius: '6px',
-            fontWeight: 600,
-            width: 'fit-content',
-          }}
-        >
-          {regionText}
-        </span>
+        {coords && coords.length >= 2 && (
+          <>
+            <div className="station-popup-info-card">
+              <div className="station-popup-info-icon">🌐</div>
+              <div className="station-popup-info-content">
+                <div className="station-popup-info-label">Coordinates</div>
+                <div className="station-popup-info-value station-coords-compact">
+                  {coords[1].toFixed(4)}°N, {coords[0].toFixed(4)}°E
+                </div>
+              </div>
+            </div>
+          </>
+        )}
       </div>
 
-      {coords && coords.length >= 2 && (
-        <div
-          style={{
-            display: 'grid',
-            gridTemplateColumns: '1fr 1fr',
-            gap: '8px',
-            marginTop: '10px',
-            paddingTop: '8px',
-            borderTop: '1px solid #f3f4f6',
-          }}
-        >
-          <div style={{ display: 'flex', flexDirection: 'column', fontSize: '13px' }}>
-            <span
-              style={{
-                fontWeight: 600,
-                color: '#6b7280',
-                marginBottom: '2px',
-                textTransform: 'uppercase',
-                letterSpacing: '0.5px',
-                fontSize: '10px',
-              }}
-            >
-              Latitude
-            </span>
-            <span
-              style={{
-                color: '#1f2937',
-                fontWeight: 500,
-                fontSize: '12px',
-                fontFamily: 'monospace',
-              }}
-            >
-              {coords[1].toFixed(6)}
-            </span>
-          </div>
-          <div style={{ display: 'flex', flexDirection: 'column', fontSize: '13px' }}>
-            <span
-              style={{
-                fontWeight: 600,
-                color: '#6b7280',
-                marginBottom: '2px',
-                textTransform: 'uppercase',
-                letterSpacing: '0.5px',
-                fontSize: '10px',
-              }}
-            >
-              Longitude
-            </span>
-            <span
-              style={{
-                color: '#1f2937',
-                fontWeight: 500,
-                fontSize: '12px',
-                fontFamily: 'monospace',
-              }}
-            >
-              {coords[0].toFixed(6)}
-            </span>
-          </div>
-        </div>
-      )}
+      <div className="station-popup-divider"></div>
+
+      <div className="station-popup-actions">
+        <button className="station-popup-btn" onClick={handleViewStatistics} type="button">
+          <span className="station-popup-btn-icon">📊</span>
+          <span>View Statistics</span>
+        </button>
+      </div>
     </div>
   );
 };
 
 const ITALY_CENTER = [41.89, 12.492];
-const STATION_FOCUS_ZOOM = 13;
+const STATION_FOCUS_ZOOM = 15;
 const REGION_FOCUS_PADDING = [30, 30];
 
 function _normalizeRegionKey(value) {
@@ -262,9 +156,9 @@ function _pointInPolygonLatLng(pointLatLng, polygonLatLngs) {
 const selectedStationIcon = L.divIcon({
   className: 'selected-station-icon',
   html: '<div class="selected-station-pin"></div>',
-  iconSize: [28, 28],
-  iconAnchor: [14, 28],
-  popupAnchor: [0, -28],
+  iconSize: [32, 32],
+  iconAnchor: [16, 32],
+  popupAnchor: [0, -32],
 });
 
 const REGION_COLORS = ['#dc2626', '#2563eb', '#059669', '#d97706', '#7c3aed', '#0891b2', '#f43f5e', '#16a34a'];
@@ -286,7 +180,12 @@ function AutoZoomToStation({ feature }) {
     if (!feature?.geometry?.coordinates) return;
     const [lng, lat] = feature.geometry.coordinates;
     if (typeof lat !== 'number' || typeof lng !== 'number') return;
-    map.flyTo([lat, lng], STATION_FOCUS_ZOOM, { duration: 0.8 });
+    
+    // Fly to station with smooth animation
+    map.flyTo([lat, lng], STATION_FOCUS_ZOOM, { 
+      duration: 1.2,
+      easeLinearity: 0.25 
+    });
   }, [feature, map]);
 
   return null;
@@ -414,8 +313,23 @@ const MapSection = ({ filters = {} }) => {
               const [lng, lat] = f.geometry.coordinates;
               const code = f?.properties?.code || `${lat},${lng}`;
               return (
-                <Marker key={`selected-${code}`} position={[lat, lng]} icon={selectedStationIcon}>
-                  <Popup>
+                <Marker 
+                  key={`selected-${code}`} 
+                  position={[lat, lng]} 
+                  icon={selectedStationIcon}
+                  eventHandlers={{
+                    add: (e) => {
+                      // Auto-open popup when marker is added
+                      setTimeout(() => e.target.openPopup(), 400);
+                    }
+                  }}
+                >
+                  <Popup 
+                    maxWidth={360} 
+                    minWidth={320}
+                    autoPan={true}
+                    keepInView={true}
+                  >
                     <StationPopup feature={f} />
                   </Popup>
                 </Marker>
@@ -435,10 +349,28 @@ const MapSection = ({ filters = {} }) => {
                 }}
                 onEachFeature={(feature, layer) => {
                   layer.on('click', () => {
+                    // Create a container for the popup content
                     const popupNode = document.createElement('div');
-                    const root = ReactDOM.createRoot(popupNode);
+                    popupNode.style.minWidth = '320px';
+                    
+                    // Create root and render
+                    const root = createRoot(popupNode);
                     root.render(<StationPopup feature={feature} />);
-                    layer.bindPopup(popupNode).openPopup();
+                    
+                    // Bind popup with proper options and open after ensuring render
+                    requestAnimationFrame(() => {
+                      requestAnimationFrame(() => {
+                        layer.bindPopup(popupNode, {
+                          maxWidth: 360,
+                          minWidth: 320,
+                          autoPan: true,
+                          keepInView: true,
+                          closeButton: true,
+                          autoClose: true,
+                          closeOnClick: false
+                        }).openPopup();
+                      });
+                    });
                   });
                 }}
               />
