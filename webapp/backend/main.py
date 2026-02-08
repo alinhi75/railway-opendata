@@ -18,10 +18,7 @@ import csv
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional
 from datetime import date
-from enum import Enum
-import typing as t
 import numpy as np
-# import src.scraper.train as tr
 from src.const import RailwayCompany
 # Data directories (patched to use webapp/data as the canonical source)
 WEBAPP_DATA_DIR = Path(__file__).parent.parent / "data"
@@ -51,17 +48,9 @@ REGION_CODE_TO_NAME: Dict[int, str] = {
     20: "Sardegna",
 }
 
-# --- LIVE DATA VERSION: Fetch stations from ViaggiaTreno API ---
-import sys
-from pathlib import Path
-sys.path.append(str((Path(__file__).parent.parent.parent).resolve()))
-from src.scraper.station import Station
-
 app = FastAPI()
 
 # CORS middleware (allow all origins for simplicity)
-from fastapi.middleware.cors import CORSMiddleware
-
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -69,67 +58,6 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-@app.get("/stations_live")
-def get_stations_live(
-    q: Optional[str] = None,
-    limit: int = 0,
-    with_coords_only: bool = False,
-    region: Optional[int] = None,
-):
-    """
-        start_date: Optional[str] = None,
-        end_date: Optional[str] = None,
-        railway_companies: Optional[str] = None,
-        regions: Optional[str] = None,
-        station_query: Optional[str] = None,
-        recompute: bool = False,
-    Get station data (GeoJSON, live from ViaggiaTreno API)
-    For map markers and station selection
-
-    Query params:
-    - q: optional substring match on station name/short_name/code
-    - limit: max returned features (0 means no limit; useful for typeahead dropdowns)
-    - with_coords_only: if true, only return stations that have coordinates
-    - region: optional region code (int) to filter stations
-    """
-    try:
-        stations: list = []
-        region_codes = [region] if region is not None else list(REGION_CODE_TO_NAME.keys())
-        for reg_code in region_codes:
-            try:
-                stations.extend(Station.by_region(reg_code))
-            except Exception:
-                continue
-        # Filter by query
-        if q:
-            needle = q.strip().lower()
-            stations = [s for s in stations if needle in (s.name or '').lower() or needle in (s.short_name or '').lower() or needle in (s.code or '').lower()]
-        # Filter by coordinates
-        if with_coords_only:
-            stations = [s for s in stations if s.position and all(s.position)]
-        # Limit
-        if limit > 0:
-            stations = stations[:limit]
-        # Convert to GeoJSON FeatureCollection
-        features = []
-        for s in stations:
-            if not s.position or not all(s.position):
-                coords = None
-            else:
-                coords = [s.position[1], s.position[0]]  # [lon, lat]
-            features.append({
-                "type": "Feature",
-                "geometry": {"type": "Point", "coordinates": coords} if coords else None,
-                "properties": {
-                    "code": s.code,
-                    "name": s.name,
-                    "short_name": s.short_name,
-                    "region_code": s.region_code,
-                },
-            })
-        return {"type": "FeatureCollection", "features": features}
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error fetching stations (live): {str(e)}")
 
 RUNTIME_DIR = DATA_DIR / "runtime"
 RUNTIME_DIR.mkdir(parents=True, exist_ok=True)
@@ -421,6 +349,30 @@ def root():
         "docs": "/docs",
         "version": "0.1.0"
     }
+
+
+@app.get("/meta/regions")
+def meta_regions():
+    """Return all known Italian regions (names) used by the UI filters."""
+    # Keep a stable order by region code.
+    return {"regions": [REGION_CODE_TO_NAME[k] for k in sorted(REGION_CODE_TO_NAME.keys())]}
+
+
+@app.get("/meta/companies")
+def meta_companies():
+    """Return all railway company codes used by the dataset and analyzer."""
+    # Include a UI-only sentinel for “no filter”.
+    companies = [{"code": "ALL", "label": "Generale"}]
+    for member in RailwayCompany:
+        # RailwayCompany.from_code maps numeric client_code -> member.name
+        companies.append({"code": member.name, "label": member.name})
+    return {"companies": companies}
+
+
+@app.get("/health")
+def health():
+    """Simple health check used by the frontend/dev tooling."""
+    return {"status": "ok"}
 
 
 @app.get("/stats/describe")

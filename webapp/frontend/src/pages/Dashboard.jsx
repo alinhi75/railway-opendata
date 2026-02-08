@@ -185,8 +185,8 @@ const Dashboard = () => {
                     <div className="insight-item">
                       <div className="insight-icon">⚡</div>
                       <div className="insight-text">
-                        <strong>Real-time Updates</strong>
-                        <p>Data refreshed from ViaggiaTreno API</p>
+                        <strong>Dataset-Based Analysis</strong>
+                        <p>Results computed from the local dataset</p>
                       </div>
                     </div>
                   </div>

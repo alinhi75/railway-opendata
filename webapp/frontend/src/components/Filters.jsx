@@ -14,6 +14,8 @@ import './Filters.css';
 const Filters = ({ onChange, initialFilters = {} }) => {
   const [companies, setCompanies] = useState(initialFilters.companies || []);
   const [regions, setRegions] = useState(initialFilters.regions || []);
+  const [startDate, setStartDate] = useState(initialFilters.startDate || '');
+  const [endDate, setEndDate] = useState(initialFilters.endDate || '');
   const [stationQuery, setStationQuery] = useState(initialFilters.stationQuery || '');
   const [selectedStations, setSelectedStations] = useState([]); // Array of {code, name, region, regionName}
 
@@ -129,6 +131,8 @@ const Filters = ({ onChange, initialFilters = {} }) => {
   const applyFilters = () => {
     // Combine all active filters
     const filters = {
+      startDate: startDate || null,
+      endDate: endDate || null,
       companies: companies.length > 0 ? companies : null,
       regions: regions.length > 0 ? regions : null,
       stationQuery: stationQuery || null,
@@ -146,6 +150,8 @@ const Filters = ({ onChange, initialFilters = {} }) => {
   const clearFilters = () => {
     setCompanies([]);
     setRegions([]);
+    setStartDate('');
+    setEndDate('');
     setStationQuery('');
     setSelectedStations([]);
     onChange?.({});
@@ -166,6 +172,7 @@ const Filters = ({ onChange, initialFilters = {} }) => {
 
   // Count active filters for display
   const activeFilterCount = [
+    Boolean(startDate || endDate),
     companies.length > 0,
     regions.length > 0,
     selectedStations.length > 0 || stationQuery,
@@ -211,6 +218,34 @@ const Filters = ({ onChange, initialFilters = {} }) => {
           )}
         </div>
       )}
+
+      {/* Station Search */}
+      {/* Date Range */}
+      <section className="filters-section">
+        <h3>📅 Date Range</h3>
+        <div className="date-grid">
+          <div className="date-input">
+            <label>Start date</label>
+            <input
+              type="date"
+              value={startDate}
+              min={availableDateRange?.start || undefined}
+              max={availableDateRange?.end || undefined}
+              onChange={(e) => setStartDate(e.target.value)}
+            />
+          </div>
+          <div className="date-input">
+            <label>End date</label>
+            <input
+              type="date"
+              value={endDate}
+              min={availableDateRange?.start || undefined}
+              max={availableDateRange?.end || undefined}
+              onChange={(e) => setEndDate(e.target.value)}
+            />
+          </div>
+        </div>
+      </section>
 
       {/* Station Search */}
       <section className="filters-section">

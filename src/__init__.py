@@ -14,5 +14,11 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
+"""railway-opendata package.
 
-from src import scraper
+Keep this module free of side effects so importing lightweight modules (e.g.
+`src.const`) does not implicitly import the scraper and its heavier
+dependencies.
+"""
+
+__all__: list[str] = []
