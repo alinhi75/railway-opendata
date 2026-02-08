@@ -78,6 +78,99 @@
   border-color: #667eea;
 }
 
+/* Compact date controls inside the range banner (custom mode) */
+.range-controls {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding-bottom: 8px;
+  border-bottom: 1px dashed #e5e7eb;
+}
+
+.range-controls-title {
+  font-weight: 700;
+  color: #1f2937;
+}
+
+.range-controls-grid {
+  display: grid;
+  grid-template-columns: minmax(180px, 240px) auto minmax(180px, 240px);
+  column-gap: 28px;
+  row-gap: 10px;
+  align-items: end;
+  justify-content: start;
+}
+
+@media (max-width: 720px) {
+  .range-controls-grid {
+    grid-template-columns: 1fr;
+    column-gap: 0;
+  }
+}
+
+.range-controls-sep {
+  align-self: end;
+  height: 40px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 800;
+  color: #6b7280;
+  user-select: none;
+}
+
+@media (max-width: 720px) {
+  .range-controls-sep {
+    display: none;
+  }
+}
+
+.range-control label {
+  display: block;
+  font-size: 12px;
+  font-weight: 600;
+  color: #6b7280;
+  margin-bottom: 4px;
+}
+
+.range-control input[type="date"] {
+  width: 100%;
+  padding: 8px 10px;
+  border: 2px solid #d1d5db;
+  border-radius: 8px;
+  font-size: 14px;
+  font-weight: 500;
+  color: #1f2937;
+  background: white;
+  transition: all 0.3s ease;
+}
+
+.range-control-input {
+  position: relative;
+  cursor: pointer;
+}
+
+.range-control-icon {
+  position: absolute;
+  left: 10px;
+  top: 50%;
+  transform: translateY(-50%);
+  font-size: 14px;
+  line-height: 1;
+  color: #6b7280;
+  pointer-events: none;
+}
+
+.range-control-input input[type="date"] {
+  padding-left: 34px;
+}
+
+.range-control input[type="date"]:focus {
+  outline: none;
+  border-color: #667eea;
+  box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.15);
+}
+
 /* Monthly Selector */
 .monthly-selector {
   display: flex;

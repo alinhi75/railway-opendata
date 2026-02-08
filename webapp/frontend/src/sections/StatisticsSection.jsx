@@ -1,6 +1,5 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { apiService } from '../services/api';
-import Filters from '../components/Filters';
 import './StatisticsSection.css';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
@@ -10,16 +9,35 @@ const toApiUrl = (p) => (p && typeof p === 'string' && p.startsWith('/') ? `${AP
  * Statistics Section
  * Formerly: pages/Statistics
  */
-const StatisticsSection = () => {
+const StatisticsSection = ({ filters = {} }) => {
   const [delayBoxplotPath, setDelayBoxplotPath] = useState(null);
   const [trainCountPath, setTrainCountPath] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
-  const [filters, setFilters] = useState({});
-  const [viewMode, setViewMode] = useState('monthly');
+  const [viewMode, setViewMode] = useState('custom');
   const [availableMonths, setAvailableMonths] = useState([]);
   const [selectedYear, setSelectedYear] = useState(null);
   const [selectedMonth, setSelectedMonth] = useState(null);
+  const [availableDateRange, setAvailableDateRange] = useState(null);
+  const [customStartDate, setCustomStartDate] = useState('');
+  const [customEndDate, setCustomEndDate] = useState('');
+
+  const customStartInputRef = useRef(null);
+  const customEndInputRef = useRef(null);
+
+  const openNativeDatePicker = (inputEl) => {
+    if (!inputEl) return;
+    // Chrome/Safari (newer) support this; otherwise focus at least.
+    if (typeof inputEl.showPicker === 'function') {
+      try {
+        inputEl.showPicker();
+        return;
+      } catch {
+        // ignore and fall back to focus
+      }
+    }
+    inputEl.focus();
+  };
 
   useEffect(() => {
     const fetchAvailableMonths = async () => {
@@ -37,6 +55,25 @@ const StatisticsSection = () => {
       }
     };
     fetchAvailableMonths();
+  }, []);
+
+  useEffect(() => {
+    const fetchAvailableDateRange = async () => {
+      try {
+        const statsRes = await apiService.getDescribeStats();
+        if (statsRes.data?.available_min_date && statsRes.data?.available_max_date) {
+          setAvailableDateRange({
+            start: statsRes.data.available_min_date,
+            end: statsRes.data.available_max_date,
+          });
+        }
+      } catch (err) {
+        // Non-fatal: we can still operate without a known global date range.
+        console.warn('Could not fetch available date range from stats:', err);
+      }
+    };
+
+    fetchAvailableDateRange();
   }, []);
 
   useEffect(() => {
@@ -62,8 +99,16 @@ const StatisticsSection = () => {
           }
         } else if (viewMode === 'custom') {
           const params = {};
-          if (filters.startDate) params.start_date = filters.startDate;
-          if (filters.endDate) params.end_date = filters.endDate;
+          const hasCustomRange = Boolean(customStartDate && customEndDate);
+          const hasSharedRange = Boolean(filters.startDate && filters.endDate);
+
+          if (hasCustomRange) {
+            params.start_date = customStartDate;
+            params.end_date = customEndDate;
+          } else if (hasSharedRange) {
+            params.start_date = filters.startDate;
+            params.end_date = filters.endDate;
+          }
           if (filters.companies && filters.companies.length > 0) params.railway_companies = filters.companies.join(',');
           if (filters.regions && filters.regions.length > 0) params.regions = filters.regions.join(',');
           if (filters.stationQuery) params.station_query = filters.stationQuery;
@@ -108,7 +153,7 @@ const StatisticsSection = () => {
       return;
     }
     fetchStatistics();
-  }, [filters, viewMode, selectedYear, selectedMonth]);
+  }, [filters, viewMode, selectedYear, selectedMonth, customStartDate, customEndDate]);
 
   const availableYears = [...new Set(availableMonths.map((m) => m.year))].sort((a, b) => b - a);
   const monthsForYear = selectedYear
@@ -121,6 +166,21 @@ const StatisticsSection = () => {
         end: `${availableMonths[availableMonths.length - 1].year}-${String(availableMonths[availableMonths.length - 1].month).padStart(2, '0')}-28`,
       }
     : null;
+
+  const customDateRangeError = (() => {
+    const s = (customStartDate || '').trim();
+    const e = (customEndDate || '').trim();
+    if (!s && !e) return null;
+    if ((s && !e) || (!s && e)) return 'Select both start and end date.';
+    if (s && e && s > e) return 'Start date must be before (or equal to) end date.';
+    return null;
+  })();
+
+  const selectedStatsRange = customStartDate && customEndDate
+    ? { start: customStartDate, end: customEndDate }
+    : (filters.startDate && filters.endDate ? { start: filters.startDate, end: filters.endDate } : null);
+
+  const customAvailableRange = availableDateRange || availableRange;
 
   const monthNames = [
     'January',
@@ -139,10 +199,10 @@ const StatisticsSection = () => {
 
   return (
     <div className="statistics-page">
-      <div className="page-header">
+      <div className="dashboard-header">
         <div className="header-content">
           <h1>📊 Railway Performance Statistics</h1>
-          <p className="page-description">
+          <p className="header-subtitle">
             Analyze train delays, service frequency, and performance metrics across the Italian railway network.
             {viewMode === 'monthly'
               ? ' Monthly views show comprehensive day-by-day analysis.'
@@ -211,18 +271,73 @@ const StatisticsSection = () => {
         </div>
       )}
 
-      {viewMode === 'custom' && (
-        <>
-          {availableRange && (
-            <div className="range-banner">
-              <div className="range-text">
-                Data available: <strong>{availableRange.start}</strong> → <strong>{availableRange.end}</strong>
+      {viewMode === 'custom' && (customAvailableRange || selectedStatsRange) && (
+        <div className="range-banner">
+          <div className="range-controls">
+            <div className="range-controls-title">📅 Statistics date range</div>
+            <div className="range-controls-grid">
+              <div className="range-control">
+                <label htmlFor="stats-custom-start">Start</label>
+                <div className="range-control-input" onClick={() => openNativeDatePicker(customStartInputRef.current)}>
+                  <span className="range-control-icon" aria-hidden="true">📅</span>
+                  <input
+                    id="stats-custom-start"
+                    type="date"
+                    ref={customStartInputRef}
+                    value={customStartDate}
+                    min={customAvailableRange?.start || undefined}
+                    max={customEndDate || customAvailableRange?.end || undefined}
+                    onChange={(e) => setCustomStartDate(e.target.value)}
+                    onClick={() => openNativeDatePicker(customStartInputRef.current)}
+                    onFocus={() => openNativeDatePicker(customStartInputRef.current)}
+                  />
+                </div>
               </div>
-              <div className="range-hint">If you see "No trains.csv files found", choose dates within this range.</div>
+              <div className="range-controls-sep" aria-hidden="true">→</div>
+              <div className="range-control">
+                <label htmlFor="stats-custom-end">End</label>
+                <div className="range-control-input" onClick={() => openNativeDatePicker(customEndInputRef.current)}>
+                  <span className="range-control-icon" aria-hidden="true">📅</span>
+                  <input
+                    id="stats-custom-end"
+                    type="date"
+                    ref={customEndInputRef}
+                    value={customEndDate}
+                    min={customStartDate || customAvailableRange?.start || undefined}
+                    max={customAvailableRange?.end || undefined}
+                    onChange={(e) => setCustomEndDate(e.target.value)}
+                    onClick={() => openNativeDatePicker(customEndInputRef.current)}
+                    onFocus={() => openNativeDatePicker(customEndInputRef.current)}
+                  />
+                </div>
+              </div>
+            </div>
+            {customDateRangeError && (
+              <div className="range-hint">
+                ⚠️ {customDateRangeError} Using {filters.startDate && filters.endDate ? 'the shared filter range' : 'all available dates'} until it’s complete.
+              </div>
+            )}
+          </div>
+
+          {customAvailableRange && (
+            <div className="range-text">
+              Data available: <strong>{customAvailableRange.start}</strong> → <strong>{customAvailableRange.end}</strong>
             </div>
           )}
-          <Filters onChange={setFilters} initialFilters={filters} />
-        </>
+          <div className="range-text">
+            Selected range:{' '}
+            {selectedStatsRange ? (
+              <>
+                <strong>{selectedStatsRange.start}</strong> → <strong>{selectedStatsRange.end}</strong>
+              </>
+            ) : (
+              <strong>All available dates</strong>
+            )}
+          </div>
+          {customAvailableRange && (
+            <div className="range-hint">If you see "No trains.csv files found", choose dates within this range.</div>
+          )}
+        </div>
       )}
 
       {error && (
@@ -234,9 +349,9 @@ const StatisticsSection = () => {
             </div>
             <div className="error-dialog-body">
               <p>{error}</p>
-              {availableRange && (
+              {customAvailableRange && (
                 <div className="error-dialog-hint">
-                  <strong>💡 Tip:</strong> Select dates between <code>{availableRange.start}</code> and <code>{availableRange.end}</code>
+                  <strong>💡 Tip:</strong> Select dates between <code>{customAvailableRange.start}</code> and <code>{customAvailableRange.end}</code>
                 </div>
               )}
             </div>

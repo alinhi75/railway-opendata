@@ -5,7 +5,6 @@ import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 
 import { apiService } from '../services/api';
-import Filters from '../components/Filters';
 import './MapSection.css';
 
 // Enhanced Station Popup Component
@@ -305,9 +304,8 @@ function AutoFitToRegions({ bounds, enabled }) {
   return null;
 }
 
-const MapSection = () => {
+const MapSection = ({ filters = {} }) => {
   const [stationsFc, setStationsFc] = useState(null);
-  const [filters, setFilters] = useState({});
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
@@ -397,15 +395,6 @@ const MapSection = () => {
 
   return (
     <div className="map-page">
-      <div className="page-header">
-        <div className="header-content">
-          <h1>🗺️ Station Map</h1>
-          <p className="page-description">Explore stations on an interactive map. Use filters to highlight stations or regions.</p>
-        </div>
-      </div>
-
-      <Filters onChange={setFilters} initialFilters={filters} />
-
       {loading ? (
         <div className="loading-state">
           <div className="spinner"></div>

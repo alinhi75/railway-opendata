@@ -28,6 +28,15 @@ const Filters = ({ onChange, initialFilters = {} }) => {
   const [mouseOverSuggestions, setMouseOverSuggestions] = useState(false); // Track if mouse is over suggestions to prevent closing on blur
   const mouseDownOnSuggestions = useRef(false); // Track if mouse is down on suggestions to prevent closing on blur
 
+  const dateRangeError = useMemo(() => {
+    const s = (startDate || '').trim();
+    const e = (endDate || '').trim();
+    if (!s && !e) return null;
+    if ((s && !e) || (!s && e)) return 'Select both start and end date.';
+    if (s && e && s > e) return 'Start date must be before (or equal to) end date.';
+    return null;
+  }, [startDate, endDate]);
+
   useEffect(() => {
     // Load available companies, regions, and date range
     const fetchFiltersMeta = async () => {
@@ -129,6 +138,7 @@ const Filters = ({ onChange, initialFilters = {} }) => {
   };
 
   const applyFilters = () => {
+    if (dateRangeError) return;
     // Combine all active filters
     const filters = {
       startDate: startDate || null,
@@ -184,7 +194,9 @@ const Filters = ({ onChange, initialFilters = {} }) => {
         <h2>Filters {activeFilterCount > 0 && <span className="filter-badge">{activeFilterCount}</span>}</h2>
         <div className="actions">
           <button className="btn btn-secondary" onClick={clearFilters} disabled={activeFilterCount === 0}>Clear All</button>
-          <button className="btn btn-primary" onClick={applyFilters}>Apply Filters</button>
+          <button className="btn btn-primary" onClick={applyFilters} disabled={Boolean(dateRangeError)}>
+            Apply Filters
+          </button>
         </div>
       </div>
 
@@ -192,7 +204,7 @@ const Filters = ({ onChange, initialFilters = {} }) => {
       {availableDateRange && (
         <div className="range-banner">
           <div className="range-text">
-            📅 Data available: <strong>{availableDateRange.start}</strong> → <strong>{availableDateRange.end}</strong>
+            🗃️ Data available: <strong>{availableDateRange.start}</strong> → <strong>{availableDateRange.end}</strong>
           </div>
         </div>
       )}
@@ -230,7 +242,7 @@ const Filters = ({ onChange, initialFilters = {} }) => {
               type="date"
               value={startDate}
               min={availableDateRange?.start || undefined}
-              max={availableDateRange?.end || undefined}
+              max={endDate || availableDateRange?.end || undefined}
               onChange={(e) => setStartDate(e.target.value)}
             />
           </div>
@@ -239,12 +251,18 @@ const Filters = ({ onChange, initialFilters = {} }) => {
             <input
               type="date"
               value={endDate}
-              min={availableDateRange?.start || undefined}
+              min={startDate || availableDateRange?.start || undefined}
               max={availableDateRange?.end || undefined}
               onChange={(e) => setEndDate(e.target.value)}
             />
           </div>
         </div>
+
+        {dateRangeError && (
+          <div className="range-hint" style={{ marginTop: 8 }}>
+            ⚠️ {dateRangeError}
+          </div>
+        )}
       </section>
 
       {/* Station Search */}

@@ -1,22 +1,29 @@
 /* Filters Styles */
 .filters {
+  width: 100%;
+  max-width: 1400px;
+  margin: 0 auto;
+  --filters-narrow-width: 720px;
   background: white;
   border-radius: 12px;
-  padding: 20px;
+  padding: 16px;
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
   border: 1px solid #e5e7eb;
+  box-sizing: border-box;
 }
 
 .filters-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-bottom: 20px;
+  margin-bottom: 14px;
+  gap: 12px;
+  flex-wrap: wrap;
 }
 
 .filters-header h2 {
   margin: 0;
-  font-size: 20px;
+  font-size: 18px;
   color: #1f2937;
   display: flex;
   align-items: center;
@@ -33,34 +40,47 @@
 }
 
 .range-banner {
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-  color: white;
-  padding: 12px 14px;
+  max-width: var(--filters-narrow-width);
+  width: 100%;
+  box-sizing: border-box;
+  margin-left: auto;
+  margin-right: auto;
+  background: #eef2ff;
+  color: #374151;
+  padding: 8px 10px;
   border-radius: 8px;
-  margin-bottom: 16px;
-  font-size: 14px;
+  margin-bottom: 12px;
+  font-size: 12.5px;
+  border: 1px solid #c7d2fe;
 }
 
 .range-text {
   display: flex;
   align-items: center;
   gap: 8px;
+  flex-wrap: wrap;
 }
 
 .range-text strong {
-  font-weight: 600;
+  font-weight: 700;
+  color: #667eea;
 }
 
 .active-filters-summary {
   background: #f3f4f6;
-  padding: 12px;
+  padding: 10px 12px;
   border-radius: 8px;
-  margin-bottom: 20px;
+  margin-bottom: 14px;
+  max-width: var(--filters-narrow-width);
+  width: 100%;
+  box-sizing: border-box;
+  margin-left: auto;
+  margin-right: auto;
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
   align-items: center;
-  font-size: 14px;
+  font-size: 13px;
 }
 
 .active-filters-summary strong {
@@ -70,7 +90,7 @@
 
 .filter-tag {
   background: white;
-  padding: 4px 12px;
+  padding: 3px 10px;
   border-radius: 6px;
   font-size: 13px;
   color: #1f2937;
@@ -83,15 +103,18 @@
 .actions {
   display: flex;
   gap: 10px;
+  flex-wrap: wrap;
 }
 
 .btn {
   border: none;
   border-radius: 8px;
-  padding: 10px 14px;
+  padding: 8px 12px;
   cursor: pointer;
   font-weight: 600;
   transition: transform 0.2s ease, box-shadow 0.2s ease, opacity 0.2s ease;
+  font-size: 13px;
+  line-height: 1.1;
 }
 
 .btn:hover {
@@ -123,36 +146,62 @@
 }
 
 .filters-section {
-  margin-bottom: 20px;
+  margin-bottom: 14px;
+  max-width: var(--filters-narrow-width);
+  width: 100%;
+  box-sizing: border-box;
+  margin-left: auto;
+  margin-right: auto;
 }
 
 .filters-section h3 {
   margin: 0 0 10px 0;
-  font-size: 16px;
+  font-size: 14px;
   color: #374151;
 }
 
 .date-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-  gap: 16px;
-  margin-bottom: 12px;
+  column-gap: 24px;
+  row-gap: 10px;
+  margin-bottom: 8px;
+  width: 100%;
 }
 
 .date-input label {
   display: block;
-  font-size: 13px;
+  font-size: 12px;
   color: #6b7280;
-  margin-bottom: 6px;
+  margin-bottom: 4px;
 }
 
 .date-input input {
   width: 100%;
-  padding: 10px 12px;
+  padding: 5px 9px;
+  height: 32px;
   border: 1px solid #e5e7eb;
-  border-radius: 8px;
-  font-size: 14px;
+  border-radius: 6px;
+  font-size: 12.5px;
   outline: none;
+  background: white;
+  color: #111827;
+  color-scheme: light;
+}
+
+/* Make the calendar icon feel less heavy (Chromium/WebKit) */
+.date-input input::-webkit-calendar-picker-indicator {
+  opacity: 0.75;
+  cursor: pointer;
+}
+
+.date-input input::-webkit-datetime-edit {
+  padding: 0;
+}
+
+.date-input input:focus {
+  border-color: #667eea;
+  box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.15);
 }
 
 .preset-grid {
@@ -165,16 +214,17 @@
   display: flex;
   flex-wrap: wrap;
   gap: 10px;
+  width: 100%;
 }
 
 .chip {
-  padding: 10px 14px;
+  padding: 7px 11px;
   border-radius: 20px;
   border: 1px solid #e5e7eb;
   background: #f9fafb;
   color: #374151;
   cursor: pointer;
-  font-size: 13px;
+  font-size: 12.5px;
   transition: background 0.2s ease, color 0.2s ease, transform 0.2s ease;
 }
 
@@ -190,15 +240,30 @@
 
 .station-search input {
   width: 100%;
-  padding: 10px 12px;
+  padding: 5px 9px;
+  height: 32px;
   border: 1px solid #e5e7eb;
-  border-radius: 8px;
-  font-size: 14px;
+  border-radius: 6px;
+  font-size: 12.5px;
   outline: none;
+  background: white;
+  color: #111827;
+  color-scheme: light;
+}
+
+.station-search input::placeholder,
+.date-input input::placeholder {
+  color: #9ca3af;
+}
+
+.station-search input:focus {
+  border-color: #667eea;
+  box-shadow: 0 0 0 2px rgba(102, 126, 234, 0.14);
 }
 
 .station-search {
   position: relative;
+  width: 100%;
 }
 
 .station-suggestions {
@@ -273,6 +338,7 @@
 
 .station-name {
   font-weight: 600;
+  max-width: var(--filters-narrow-width);
 }
 
 .station-region {
@@ -285,15 +351,21 @@
   font-size: 12px;
   color: #6b7280;
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
-  margin-left: 8px;
 }
 
 .selected-stations-chips {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
+  margin-bottom: 0;
+  min-height: 0;
+  width: 100%;
+}
+
+/* Only reserve space when at least one chip exists */
+.selected-stations-chips:not(:empty) {
   margin-bottom: 6px;
-  min-height: 32px;
+  min-height: 28px;
 }
 
 .station-chip {
@@ -302,8 +374,8 @@
   background: #eef2ff;
   color: #374151;
   border-radius: 16px;
-  padding: 4px 10px 4px 12px;
-  font-size: 13px;
+  padding: 3px 9px 3px 10px;
+  font-size: 12.5px;
   border: 1px solid #c7d2fe;
   margin-right: 4px;
   margin-bottom: 2px;
@@ -358,6 +430,10 @@
 @media (max-width: 768px) {
   .filters {
     padding: 16px;
+  }
+
+  .filters-header {
+    align-items: flex-start;
   }
 
   .date-grid {
