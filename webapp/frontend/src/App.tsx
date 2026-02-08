@@ -1,24 +1,23 @@
 // src/App.jsx
-import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
+import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import Layout from './components/Layout';
-import Dashboard from './pages/Dashboard';
-import Statistics from './pages/Statistics';
-import MapView from './pages/MapView';
-import About from './pages/About';
-import ApiDocs from './pages/ApiDocs';
-import Docs from './pages/Docs';
+import OnePage from './pages/OnePage';
 
 function App() {
   return (
     <Router>
       <Layout>
         <Routes>
-          <Route path="/" element={<Dashboard />} />
-          <Route path="/statistics" element={<Statistics />} />
-          <Route path="/map" element={<MapView />} />
-          <Route path="/about" element={<About />} />
-          <Route path="/api-docs" element={<ApiDocs />} />
-          <Route path="/docs" element={<Docs />} />
+          <Route path="/" element={<OnePage />} />
+
+          {/* Backwards-compatible routes (redirect to section anchors) */}
+          <Route path="/statistics" element={<Navigate to="/#statistics" replace />} />
+          <Route path="/map" element={<Navigate to="/#map" replace />} />
+          <Route path="/docs" element={<Navigate to="/#top" replace />} />
+          <Route path="/api-docs" element={<Navigate to="/#top" replace />} />
+          <Route path="/about" element={<Navigate to="/#about" replace />} />
+
+          <Route path="*" element={<Navigate to="/#top" replace />} />
         </Routes>
       </Layout>
     </Router>

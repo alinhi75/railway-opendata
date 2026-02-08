@@ -1,11 +1,11 @@
 import React from 'react';
-import './About.css';
+import './AboutSection.css';
 
 /**
- * About Page
- * Explains the project purpose, data source, and limitations for citizens.
+ * About Section
+ * Formerly: pages/About
  */
-const About = () => {
+const AboutSection = () => {
   return (
     <div className="about">
       <div className="about-container">
@@ -28,14 +28,8 @@ const About = () => {
 
         <section className="about-section">
           <h2>Data & methodology (MVP)</h2>
-          <p>
-            The backend serves precomputed outputs generated from the project dataset.
-            Filters are sent as query parameters to the API endpoints.
-          </p>
-          <p>
-            In this MVP, some visualizations may be served as precomputed files to keep the
-            experience fast and reliable.
-          </p>
+          <p>The backend serves precomputed outputs generated from the project dataset. Filters are sent as query parameters to the API endpoints.</p>
+          <p>In this MVP, some visualizations may be served as precomputed files to keep the experience fast and reliable.</p>
         </section>
 
         <section className="about-section">
@@ -51,4 +45,4 @@ const About = () => {
   );
 };
 
-export default About;
+export default AboutSection;

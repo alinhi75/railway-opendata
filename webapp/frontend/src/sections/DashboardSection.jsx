@@ -1,14 +1,13 @@
 import React, { useEffect, useState } from 'react';
 import { apiService } from '../services/api';
 import SummaryCard from '../components/SummaryCard';
-import './Dashboard.css';
+import './DashboardSection.css';
 
 /**
- * Dashboard Page
- * US-1: Performance Statistics Overview
- * Shows key metrics and summary cards
+ * Dashboard Section
+ * Formerly: pages/Dashboard
  */
-const Dashboard = () => {
+const DashboardSection = () => {
   const [stats, setStats] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -31,7 +30,6 @@ const Dashboard = () => {
     fetchStats();
   }, []);
 
-  // Extract key metrics from new stats format (flat object)
   const getMetric = () => {
     if (!stats) return { mean: 'N/A', std: 'N/A', min: 'N/A', max: 'N/A', count: 0 };
     return {
@@ -43,7 +41,6 @@ const Dashboard = () => {
     };
   };
 
-  // Format number with proper decimal places
   const formatNumber = (value, decimals = 1) => {
     if (value === 'N/A' || value === null || value === undefined) return 'N/A';
     const num = typeof value === 'number' ? value : parseFloat(value);
@@ -51,7 +48,6 @@ const Dashboard = () => {
     return num.toFixed(decimals);
   };
 
-  // Format large numbers with commas
   const formatCount = (value) => {
     if (value === 'N/A' || value === null || value === undefined) return 'N/A';
     const num = typeof value === 'number' ? value : parseInt(value);
@@ -60,6 +56,7 @@ const Dashboard = () => {
   };
 
   const metric = getMetric();
+
   return (
     <div className="dashboard">
       <div className="dashboard-container">
@@ -75,6 +72,7 @@ const Dashboard = () => {
             )}
           </div>
         </div>
+
         {loading ? (
           <div className="loading-container">
             <div className="spinner"></div>
@@ -87,42 +85,16 @@ const Dashboard = () => {
           </div>
         ) : (
           <>
-            {/* Key Metrics Summary */}
             <section className="summary-section">
               <h2 className="section-title">Key Metrics</h2>
               <div className="summary-grid">
-                <SummaryCard
-                  title="Total Records"
-                  value={formatCount(metric.count)}
-                  unit="trains"
-                  icon="🚂"
-                  color="#667eea"
-                />
-                <SummaryCard
-                  title="Average Delay"
-                  value={formatNumber(metric.mean, 1)}
-                  unit="minutes"
-                  icon="⏱️"
-                  color="#f59e0b"
-                />
-                <SummaryCard
-                  title="Std Deviation"
-                  value={formatNumber(metric.std, 1)}
-                  unit="minutes"
-                  icon="📉"
-                  color="#ef4444"
-                />
-                <SummaryCard
-                  title="Max Delay"
-                  value={formatNumber(metric.max, 1)}
-                  unit="minutes"
-                  icon="🚨"
-                  color="#10b981"
-                />
+                <SummaryCard title="Total Records" value={formatCount(metric.count)} unit="trains" icon="🚂" color="#667eea" />
+                <SummaryCard title="Average Delay" value={formatNumber(metric.mean, 1)} unit="minutes" icon="⏱️" color="#f59e0b" />
+                <SummaryCard title="Std Deviation" value={formatNumber(metric.std, 1)} unit="minutes" icon="📉" color="#ef4444" />
+                <SummaryCard title="Max Delay" value={formatNumber(metric.max, 1)} unit="minutes" icon="🚨" color="#10b981" />
               </div>
             </section>
 
-            {/* Detailed Statistics */}
             <section className="details-section">
               <h2 className="section-title">Detailed Statistics</h2>
               <div className="stats-grid">
@@ -133,31 +105,19 @@ const Dashboard = () => {
                   </div>
                   <div className="stat-rows">
                     <div className="stat-row">
-                      <span className="label">
-                        <span className="label-icon">📏</span>
-                        Mean
-                      </span>
+                      <span className="label"><span className="label-icon">📏</span>Mean</span>
                       <span className="value">{formatNumber(metric.mean, 2)} min</span>
                     </div>
                     <div className="stat-row">
-                      <span className="label">
-                        <span className="label-icon">📊</span>
-                        Std Dev
-                      </span>
+                      <span className="label"><span className="label-icon">📊</span>Std Dev</span>
                       <span className="value">{formatNumber(metric.std, 2)} min</span>
                     </div>
                     <div className="stat-row">
-                      <span className="label">
-                        <span className="label-icon">⬇️</span>
-                        Min
-                      </span>
+                      <span className="label"><span className="label-icon">⬇️</span>Min</span>
                       <span className="value">{formatNumber(metric.min, 2)} min</span>
                     </div>
                     <div className="stat-row">
-                      <span className="label">
-                        <span className="label-icon">⬆️</span>
-                        Max
-                      </span>
+                      <span className="label"><span className="label-icon">⬆️</span>Max</span>
                       <span className="value">{formatNumber(metric.max, 2)} min</span>
                     </div>
                   </div>
@@ -194,17 +154,16 @@ const Dashboard = () => {
               </div>
             </section>
 
-            {/* Quick Links */}
             <section className="quick-links-section">
               <h2 className="section-title">Explore More</h2>
               <div className="links-grid">
-                <a href="/statistics" className="link-card">
+                <a href="#statistics" className="link-card">
                   <div className="link-icon">📈</div>
                   <h3>View Detailed Statistics</h3>
                   <p>Explore delay distributions, service frequency, and more</p>
                   <span className="link-arrow">→</span>
                 </a>
-                <a href="/map" className="link-card">
+                <a href="#map" className="link-card">
                   <div className="link-icon">🗺️</div>
                   <h3>Interactive Map</h3>
                   <p>See train movements and delays across Italy</p>
@@ -219,4 +178,4 @@ const Dashboard = () => {
   );
 };
 
-export default Dashboard;
+export default DashboardSection;

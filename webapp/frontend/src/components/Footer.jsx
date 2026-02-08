@@ -1,5 +1,4 @@
 import React from 'react';
-import { Link } from 'react-router-dom';
 import './Footer.css';
 
 /**
@@ -24,9 +23,9 @@ const Footer = () => {
           <div className="footer-section">
             <h4>Quick Links</h4>
             <ul>
-              <li><Link to="/">Dashboard</Link></li>
-              <li><Link to="/statistics">Statistics</Link></li>
-              <li><Link to="/map">Map</Link></li>
+              <li><a href="#dashboard">Dashboard</a></li>
+              <li><a href="#statistics">Statistics</a></li>
+              <li><a href="#map">Map</a></li>
             </ul>
           </div>
 
@@ -34,8 +33,6 @@ const Footer = () => {
             <h4>Resources</h4>
             <ul>
               <li><a href="https://github.com/alinhi75/railway-opendata" target="_blank" rel="noopener noreferrer">GitHub Repository</a></li>
-              <li><Link to="/docs">Documentation</Link></li>
-              <li><Link to="/api-docs">API Docs</Link></li>
             </ul>
           </div>
 
