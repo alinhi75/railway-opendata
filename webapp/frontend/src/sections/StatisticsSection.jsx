@@ -33,6 +33,18 @@ const StatisticsSection = ({ filters = {} }) => {
     ? filters.stationCodes[0]
     : filters.stationCode || null;
 
+  const clearStationSelection = () => {
+    try {
+      const url = new URL(window.location.href);
+      url.searchParams.delete('stationCode');
+      const next = `${url.pathname}${url.search}${url.hash}`;
+      window.history.replaceState({}, '', next);
+    } catch {
+      // ignore
+    }
+    window.dispatchEvent(new CustomEvent('stationCleared'));
+  };
+
   // Load station details if a specific station is selected
   useEffect(() => {
     if (!selectedStationCode) {
@@ -246,7 +258,7 @@ const StatisticsSection = ({ filters = {} }) => {
   return (
     <div className="statistics-page">
       {selectedStationCode && stationDetails && (
-        <StationDetailsCard station={stationDetails} stationStats={stationStats} />
+        <StationDetailsCard station={stationDetails} stationStats={stationStats} onClose={clearStationSelection} />
       )}
 
       <div className="dashboard-header">

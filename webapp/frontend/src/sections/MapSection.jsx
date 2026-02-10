@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState, useRef } from 'react';
 import { createRoot } from 'react-dom/client';
-import { MapContainer, TileLayer, GeoJSON, Marker, Popup, Polygon, useMap } from 'react-leaflet';
+import { MapContainer, TileLayer, GeoJSON, Marker, Popup, Polygon, useMap, useMapEvents } from 'react-leaflet';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 
@@ -93,6 +93,53 @@ const ITALY_CENTER = [41.89, 12.492];
 const STATION_FOCUS_ZOOM = 15;
 const REGION_FOCUS_PADDING = [30, 30];
 
+function _clearStationCodeFromUrl() {
+  try {
+    const url = new URL(window.location.href);
+    url.searchParams.delete('stationCode');
+    const next = `${url.pathname}${url.search}${url.hash}`;
+    window.history.replaceState({}, '', next);
+  } catch {
+    // ignore
+  }
+}
+
+const ClearSelectionOnMapClick = ({ enabled }) => {
+  const map = useMapEvents({
+    click: (e) => {
+      if (!enabled) return;
+      const target = e?.originalEvent?.target;
+      if (target && typeof target.closest === 'function') {
+        // Don't clear selection when interacting with markers/popups/station points.
+        if (target.closest('.leaflet-marker-icon, .leaflet-popup, .leaflet-interactive')) return;
+      }
+
+      map.closePopup();
+      _clearStationCodeFromUrl();
+      window.dispatchEvent(new CustomEvent('stationCleared'));
+    },
+  });
+
+  return null;
+};
+
+const ClearSelectionOnPopupClose = ({ enabled }) => {
+  useMapEvents({
+    popupclose: (e) => {
+      if (!enabled) return;
+      const source = e?.popup?._source;
+      const iconEl = source?._icon;
+      // Only clear when the popup being closed belongs to the selected marker.
+      if (!iconEl?.classList?.contains('selected-station-icon')) return;
+
+      _clearStationCodeFromUrl();
+      window.dispatchEvent(new CustomEvent('stationCleared'));
+    },
+  });
+
+  return null;
+};
+
 function _normalizeRegionKey(value) {
   return String(value || '')
     .trim()
@@ -181,16 +228,26 @@ function getRegionStationIcon(color) {
 
 function AutoZoomToStation({ feature }) {
   const map = useMap();
+  const hadStationRef = useRef(false);
 
   useEffect(() => {
-    if (!feature?.geometry?.coordinates) return;
+    if (!feature?.geometry?.coordinates) {
+      if (hadStationRef.current) {
+        hadStationRef.current = false;
+        map.closePopup();
+        map.flyTo(ITALY_CENTER, 6, { duration: 0.9, easeLinearity: 0.25 });
+      }
+      return;
+    }
+
     const [lng, lat] = feature.geometry.coordinates;
     if (typeof lat !== 'number' || typeof lng !== 'number') return;
-    
+
+    hadStationRef.current = true;
     // Fly to station with smooth animation
-    map.flyTo([lat, lng], STATION_FOCUS_ZOOM, { 
+    map.flyTo([lat, lng], STATION_FOCUS_ZOOM, {
       duration: 1.2,
-      easeLinearity: 0.25 
+      easeLinearity: 0.25,
     });
   }, [feature, map]);
 
@@ -313,6 +370,8 @@ const MapSection = ({ filters = {} }) => {
       ) : (
         <div className="map-card">
           <MapContainer center={ITALY_CENTER} zoom={6} scrollWheelZoom className="leaflet-map">
+            <ClearSelectionOnMapClick enabled={selectedStationFeatures.length > 0} />
+            <ClearSelectionOnPopupClose enabled={selectedStationFeatures.length > 0} />
             <TileLayer attribution='&copy; OpenStreetMap contributors' url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
 
             {selectedStationFeatures.map((f) => {
@@ -327,6 +386,10 @@ const MapSection = ({ filters = {} }) => {
                     add: (e) => {
                       // Auto-open popup when marker is added
                       setTimeout(() => e.target.openPopup(), 400);
+                    },
+                    popupclose: () => {
+                      _clearStationCodeFromUrl();
+                      window.dispatchEvent(new CustomEvent('stationCleared'));
                     }
                   }}
                 >

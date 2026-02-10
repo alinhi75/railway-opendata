@@ -1008,10 +1008,16 @@ def get_external_station_stats(station_code: str, date: Optional[str] = None):
         # TrainStats API is case-sensitive - convert to uppercase
         station_code_upper = station_code.upper()
         
-        url = f"https://trainstats.altervista.org/speciali/stazioni/?n={station_code_upper}&data={date}"
+        url = "https://trainstats.altervista.org/speciali/stazioni/"
         headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'}
-        
-        response = requests.get(url, headers=headers, timeout=10)
+
+        # Use query params so station names with spaces/apostrophes are encoded correctly.
+        response = requests.get(
+            url,
+            params={"n": station_code_upper, "data": date},
+            headers=headers,
+            timeout=10,
+        )
         if response.status_code != 200:
             raise HTTPException(status_code=404, detail=f"Station {station_code} not found on TrainStats")
         

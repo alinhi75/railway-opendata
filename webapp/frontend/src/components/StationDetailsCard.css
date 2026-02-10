@@ -6,6 +6,12 @@
 	margin-bottom: 32px;
 	overflow: hidden;
 	animation: slideInDown 0.4s ease-out;
+	--donut-track: #e5e7eb;
+	--station-chart-1: #4f46e5;
+	--station-chart-2: #7c3aed;
+	--station-chart-3: #c7c9d1;
+	--station-chart-4: #6b7280;
+	--chart-axis: #e5e7eb;
 }
 
 @keyframes slideInDown {
@@ -26,6 +32,35 @@
 	padding: 28px;
 	background: linear-gradient(135deg, #4f46e5 0%, #7c3aed 100%);
 	color: white;
+}
+
+.station-details-close {
+	appearance: none;
+	border: 1px solid rgba(255, 255, 255, 0.4);
+	background: rgba(255, 255, 255, 0.18);
+	color: white;
+	border-radius: 12px;
+	width: 36px;
+	height: 36px;
+	line-height: 1;
+	font-size: 22px;
+	font-weight: 800;
+	cursor: pointer;
+	flex-shrink: 0;
+	align-self: flex-start;
+	margin-left: auto;
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+}
+
+.station-details-close:hover {
+	background: rgba(255, 255, 255, 0.26);
+}
+
+.station-details-close:focus-visible {
+	outline: 2px solid rgba(255, 255, 255, 0.7);
+	outline-offset: 2px;
 }
 
 .station-details-icon {
@@ -166,6 +201,179 @@
 	white-space: nowrap;
 }
 
+.station-mini-charts {
+	display: grid;
+	grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+	gap: 16px;
+	padding: 0 28px 28px;
+	background: linear-gradient(to bottom, #ffffff, #ffffff);
+}
+
+.station-stats-charts {
+	display: grid;
+	grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+	gap: 16px;
+	padding: 0 28px 28px;
+	background: linear-gradient(to bottom, #ffffff, #ffffff);
+}
+
+.station-chart {
+	background: white;
+	border-radius: 12px;
+	border: 1px solid #e5e7eb;
+	box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+	overflow: hidden;
+}
+
+.station-chart__header {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 12px;
+	padding: 14px 16px;
+	border-bottom: 1px solid #e5e7eb;
+	background: #f9fafb;
+}
+
+.station-chart__title {
+	font-size: 12px;
+	font-weight: 800;
+	color: #111827;
+	letter-spacing: 0.5px;
+	text-transform: uppercase;
+}
+
+.station-chart__body {
+	padding: 14px 16px 16px;
+}
+
+.station-chart__body--donut {
+	display: grid;
+	grid-template-columns: auto 1fr;
+	gap: 16px;
+	align-items: center;
+}
+
+.station-chart__legend {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 10px;
+	justify-content: flex-end;
+}
+
+.station-legend__pill {
+	display: inline-flex;
+	align-items: center;
+	gap: 8px;
+	padding: 6px 10px;
+	border-radius: 999px;
+	border: 1px solid #e5e7eb;
+	background: white;
+	font-size: 12px;
+	font-weight: 700;
+	color: #111827;
+}
+
+.station-legend__item {
+	display: grid;
+	grid-template-columns: auto 1fr auto;
+	gap: 10px;
+	align-items: center;
+	padding: 10px 12px;
+	border-radius: 10px;
+	border: 1px solid #e5e7eb;
+	background: #ffffff;
+	font-size: 13px;
+}
+
+.station-legend__swatch {
+	width: 10px;
+	height: 10px;
+	border-radius: 3px;
+	box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.06);
+}
+
+.station-legend__label {
+	font-weight: 700;
+	color: #111827;
+}
+
+.station-legend__value {
+	font-weight: 800;
+	color: #111827;
+}
+
+.station-donut {
+	display: flex;
+	align-items: center;
+	justify-content: center;
+}
+
+.station-donut__center {
+	fill: #111827;
+	font-size: 20px;
+	font-weight: 900;
+}
+
+.station-bars__svg {
+	width: 100%;
+	height: 240px;
+	display: block;
+}
+
+.station-bars__xlabel {
+	fill: #6b7280;
+	font-size: 11px;
+	font-weight: 700;
+}
+
+.station-bars__ylabel {
+	fill: #6b7280;
+	font-size: 11px;
+	font-weight: 700;
+}
+
+.mini-chart-card {
+	align-items: center;
+}
+
+.mini-donut {
+	display: grid;
+	grid-template-columns: auto 1fr;
+	align-items: center;
+	gap: 12px;
+	margin-top: 8px;
+}
+
+.mini-donut svg {
+	flex-shrink: 0;
+	display: block;
+}
+
+.mini-donut__pct {
+	fill: #111827;
+	font-size: 16px;
+	font-weight: 800;
+}
+
+.mini-donut__meta {
+	min-width: 0;
+}
+
+.mini-donut__label {
+	font-size: 13px;
+	font-weight: 800;
+	color: #111827;
+	line-height: 1.2;
+}
+
+.mini-donut__sublabel {
+	margin-top: 3px;
+	font-size: 12px;
+	font-weight: 600;
+	color: #6b7280;
+}
+
 /* Responsive Design */
 @media (max-width: 768px) {
 	.station-details-header {
@@ -187,6 +395,18 @@
 	.station-details-grid {
 		grid-template-columns: 1fr;
 		padding: 20px;
+		gap: 12px;
+	}
+
+	.station-mini-charts {
+		grid-template-columns: 1fr;
+		padding: 0 20px 20px;
+		gap: 12px;
+	}
+
+	.station-stats-charts {
+		grid-template-columns: 1fr;
+		padding: 0 20px 20px;
 		gap: 12px;
 	}
 

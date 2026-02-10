@@ -65,8 +65,21 @@ const OnePage = () => {
       }
     };
 
+    const handleStationCleared = () => {
+      setAppliedFilters((prev) => {
+        const next = { ...prev };
+        delete next.stationCodes;
+        delete next.stationCode;
+        return next;
+      });
+    };
+
     window.addEventListener('stationSelected', handleStationSelected);
-    return () => window.removeEventListener('stationSelected', handleStationSelected);
+    window.addEventListener('stationCleared', handleStationCleared);
+    return () => {
+      window.removeEventListener('stationSelected', handleStationSelected);
+      window.removeEventListener('stationCleared', handleStationCleared);
+    };
   }, []);
 
   useEffect(() => {
