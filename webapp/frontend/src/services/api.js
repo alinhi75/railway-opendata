@@ -56,6 +56,12 @@ export const apiService = {
    */
   getAvailableMonths: () => api.get('/stats/available-months'),
 
+  /**
+   * Get external station statistics from TrainStats API
+   * Returns: detailed statistics from trainstats.altervista.org
+   */
+  getExternalStationStats: (stationCode) => api.get(`/stats/external-station/${stationCode}`),
+
   // ===== MAP ENDPOINTS (US-4) =====
 
   /**

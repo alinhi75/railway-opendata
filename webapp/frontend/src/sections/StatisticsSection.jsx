@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { apiService } from '../services/api';
+import StationDetailsCard from '../components/StationDetailsCard';
 import './StatisticsSection.css';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
@@ -21,9 +22,54 @@ const StatisticsSection = ({ filters = {} }) => {
   const [availableDateRange, setAvailableDateRange] = useState(null);
   const [customStartDate, setCustomStartDate] = useState('');
   const [customEndDate, setCustomEndDate] = useState('');
+  const [stationDetails, setStationDetails] = useState(null);
+  const [stationStats, setStationStats] = useState(null);
 
   const customStartInputRef = useRef(null);
   const customEndInputRef = useRef(null);
+
+  // Extract selected station code from filters
+  const selectedStationCode = Array.isArray(filters.stationCodes) && filters.stationCodes.length > 0
+    ? filters.stationCodes[0]
+    : filters.stationCode || null;
+
+  // Load station details if a specific station is selected
+  useEffect(() => {
+    if (!selectedStationCode) {
+      setStationDetails(null);
+      setStationStats(null);
+      return;
+    }
+
+    const fetchStationDetails = async () => {
+      try {
+        const stationsRes = await apiService.getStations({ with_coords_only: true, limit: 0 });
+        const stationFeature = stationsRes.data?.features?.find(
+          (f) => String(f?.properties?.code || '').toLowerCase().trim() === String(selectedStationCode).toLowerCase().trim()
+        );
+        setStationDetails(stationFeature || null);
+
+        // Try to fetch external statistics using station name
+        try {
+          const stationName = stationFeature?.properties?.long_name || stationFeature?.properties?.name;
+          if (stationName) {
+            const externalRes = await apiService.getExternalStationStats(stationName);
+            if (externalRes.data?.data) {
+              setStationStats(externalRes.data.data);
+            }
+          }
+        } catch (err) {
+          console.warn('Could not fetch external station stats:', err);
+          // Non-fatal: we can still show local data
+        }
+      } catch (err) {
+        console.error('Failed to fetch station details:', err);
+        setStationDetails(null);
+      }
+    };
+
+    fetchStationDetails();
+  }, [selectedStationCode]);
 
   const openNativeDatePicker = (inputEl) => {
     if (!inputEl) return;
@@ -199,11 +245,17 @@ const StatisticsSection = ({ filters = {} }) => {
 
   return (
     <div className="statistics-page">
+      {selectedStationCode && stationDetails && (
+        <StationDetailsCard station={stationDetails} stationStats={stationStats} />
+      )}
+
       <div className="dashboard-header">
         <div className="header-content">
           <h1>📊 Railway Performance Statistics</h1>
           <p className="header-subtitle">
-            Analyze train delays, service frequency, and performance metrics across the Italian railway network.
+            {selectedStationCode && stationDetails
+              ? `Detailed analysis for ${stationDetails.properties?.name || selectedStationCode}. This station was selected from the map.`
+              : 'Analyze train delays, service frequency, and performance metrics across the Italian railway network.'}
             {viewMode === 'monthly'
               ? ' Monthly views show comprehensive day-by-day analysis.'
               : ' Apply custom filters to drill down into specific scenarios.'}

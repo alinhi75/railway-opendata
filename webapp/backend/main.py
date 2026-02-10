@@ -20,6 +20,22 @@ from typing import Any, Dict, Iterable, List, Optional
 from datetime import date
 import numpy as np
 from src.const import RailwayCompany
+
+
+def sanitize_for_json(obj: Any) -> Any:
+    """Recursively convert NaN and Inf values to None for JSON serialization."""
+    if isinstance(obj, dict):
+        return {k: sanitize_for_json(v) for k, v in obj.items()}
+    elif isinstance(obj, list):
+        return [sanitize_for_json(v) for v in obj]
+    elif isinstance(obj, float):
+        try:
+            if np.isnan(obj) or np.isinf(obj):
+                return None
+        except (TypeError, ValueError):
+            pass
+        return obj
+    return obj
 # Data directories (patched to use webapp/data as the canonical source)
 WEBAPP_DATA_DIR = Path(__file__).parent.parent / "data"
 DATA_DIR = WEBAPP_DATA_DIR / "outputs"
@@ -497,7 +513,8 @@ def get_describe_stats(
     }
 
     with open(cache_json, "w", encoding="utf-8") as f:
-        json.dump(payload, f, ensure_ascii=False)
+        sanitized = sanitize_for_json(payload)
+        json.dump(sanitized, f, ensure_ascii=False)
 
     return payload
 
@@ -966,6 +983,268 @@ def get_stations(
         raise HTTPException(
             status_code=404,
             detail="No station data found. Expected data/stations.csv (or stations.clean.csv or stations.geojson)"
+        )
+
+
+@app.get("/stats/external-station/{station_code}")
+def get_external_station_stats(station_code: str, date: Optional[str] = None):
+    """
+    Fetch station statistics from external TrainStats API.
+    Example: /stats/external-station/ABBASANTA?date=08_02_2026
+    Date format: DD_MM_YYYY (default: yesterday)
+    """
+    try:
+        import requests
+        from bs4 import BeautifulSoup
+        import json
+        import re
+        from datetime import datetime, timedelta
+        
+        # Default to yesterday if no date provided
+        if not date:
+            yesterday = datetime.now() - timedelta(days=1)
+            date = yesterday.strftime("%d_%m_%Y")
+        
+        # TrainStats API is case-sensitive - convert to uppercase
+        station_code_upper = station_code.upper()
+        
+        url = f"https://trainstats.altervista.org/speciali/stazioni/?n={station_code_upper}&data={date}"
+        headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'}
+        
+        response = requests.get(url, headers=headers, timeout=10)
+        if response.status_code != 200:
+            raise HTTPException(status_code=404, detail=f"Station {station_code} not found on TrainStats")
+        
+        response.encoding = 'utf-8'
+        soup = BeautifulSoup(response.text, 'html.parser')
+        
+        # Extract station name from title
+        title_tag = soup.find('title')
+        station_name = 'Unknown'
+        if title_tag:
+            parts = title_tag.text.split('-')
+            if len(parts) > 1:
+                station_name = parts[-1].strip()
+        
+        # Extract JSON data from JavaScript - more robust approach
+        scripts = soup.find_all('script')
+        data = None
+        
+        for script in scripts:
+            if script.string is None:
+                continue
+            script_str = script.string
+            if 'var datastring' not in script_str:
+                continue
+                
+            # Look for the pattern: var datastring = '...'
+            try:
+                # Find where the JSON starts (after the opening quote)
+                start_marker = "var datastring = '"
+                start_pos = script_str.find(start_marker)
+                if start_pos == -1:
+                    continue
+                    
+                start_pos += len(start_marker)
+                
+                # Find the ending quote - look for }' pattern
+                # The JSON ends with }';" or just }'
+                end_pos = script_str.find("'", start_pos)
+                
+                # Search backwards from end_pos to find the real JSON end
+                while end_pos > start_pos:
+                    # Check if this is preceded by a closing brace
+                    if end_pos > 0 and script_str[end_pos - 1] == '}':
+                        json_str = script_str[start_pos:end_pos]
+                        try:
+                            data = json.loads(json_str)
+                            break
+                        except json.JSONDecodeError:
+                            # Try next quote
+                            end_pos = script_str.find("'", end_pos + 1)
+                            if end_pos == -1:
+                                break
+                    else:
+                        end_pos = script_str.find("'", end_pos + 1)
+                        if end_pos == -1:
+                            break
+                
+                if data:
+                    break
+                    
+            except Exception as extract_err:
+                continue
+        
+        # Helper function to parse distribution data
+        def parse_distribution(dist_string):
+            """Parse the distribution string format: times##scheduled##actual"""
+            if not dist_string:
+                return {}
+            try:
+                parts = dist_string.split('##')
+                if len(parts) < 3:
+                    return {}
+                times = parts[0].split(';')
+                scheduled = [int(x) for x in parts[1].split(';')]
+                actual = [int(x) for x in parts[2].split(';')]
+                return {
+                    'times': times,
+                    'scheduled': scheduled,
+                    'actual': actual
+                }
+            except:
+                return {}
+        
+        # Try to get location data from local stations.csv
+        location_data = None
+        try:
+            for row in _read_csv_rows(STATIONS_CSV_PATH):
+                # Match by station name (case-insensitive)
+                row_name = row.get('long_name', '') or row.get('short_name', '')
+                if row_name.strip().upper() == station_code.upper():
+                    lat = row.get('latitude', '')
+                    lon = row.get('longitude', '')
+                    region_code_str = row.get('region', '')
+                    if lat and lon:
+                        try:
+                            region_code = int(region_code_str) if region_code_str else None
+                            location_data = {
+                                'latitude': float(lat),
+                                'longitude': float(lon),
+                                'region_code': region_code,
+                                'region': REGION_CODE_TO_NAME.get(region_code, 'Unknown'),
+                                'code': row.get('code', '')
+                            }
+                        except (ValueError, TypeError):
+                            pass
+                    break
+        except Exception:
+            pass  # If stations.csv is not available, continue without location
+        
+        stats = {
+            'station_code': station_code,
+            'station_name': station_name,
+            'date': date,
+            'location': location_data.copy() if location_data else None,
+            'stops': {},
+            'traffic_type': {},
+            'distribution_departures': {},
+            'distribution_arrivals': {},
+            'punctuality_departure': {},
+            'punctuality_arrival': {},
+            'categories': {},
+            'worst_trains': {}
+        }
+        
+        if data:
+            try:
+                # Map trainstats data to our stats structure
+                total_stops = data.get('treniMonitorati', 0)
+                cancelled_stops = data.get('treniCancellati', 0)
+                
+                # Stops (Fermate)
+                stats['stops'] = {
+                    'Totali': {'value': total_stops, 'percentage': '100%'},
+                    'Effettuate': {'value': total_stops - cancelled_stops, 'percentage': f'{((total_stops - cancelled_stops) / total_stops * 100):.1f}%' if total_stops > 0 else '0%'},
+                    'Soppresse': {'value': cancelled_stops, 'percentage': f'{(cancelled_stops / total_stops * 100):.1f}%' if total_stops > 0 else '0%'}
+                }
+                
+                # Traffic type (Tipo di traffico)
+                arrivals = data.get('arrivi', 0)
+                transits = data.get('transiti', 0)
+                departures = data.get('partenze', 0)
+                traffic_total = arrivals + transits + departures
+                
+                stats['traffic_type'] = {
+                    'Arrivi': {'value': arrivals, 'percentage': f'{(arrivals / traffic_total * 100):.1f}%' if traffic_total > 0 else '0%'},
+                    'Transiti': {'value': transits, 'percentage': f'{(transits / traffic_total * 100):.1f}%' if traffic_total > 0 else '0%'},
+                    'Partenze': {'value': departures, 'percentage': f'{(departures / traffic_total * 100):.1f}%' if traffic_total > 0 else '0%'}
+                }
+                
+                # Distribution of departures (Distribuzione partenze)
+                stats['distribution_departures'] = parse_distribution(data.get('partenzedist', ''))
+                
+                # Distribution of arrivals (Distribuzione arrivi)
+                stats['distribution_arrivals'] = parse_distribution(data.get('arrividist', ''))
+                
+                # Punctuality departure
+                dep_on_time = data.get('partenzaInOrario', 0)
+                dep_late = data.get('partenzaRitardo', 0)
+                dep_not_detected = data.get('partenzaNonRilevata', 0)
+                dep_total = dep_on_time + dep_late + dep_not_detected
+                
+                if dep_total > 0:
+                    stats['punctuality_departure'] = {
+                        'In orario': {'value': dep_on_time, 'percentage': f'{(dep_on_time / dep_total * 100):.1f}%'},
+                        'In ritardo': {'value': dep_late, 'percentage': f'{(dep_late / dep_total * 100):.1f}%'},
+                        'Non rilevati': {'value': dep_not_detected, 'percentage': f'{(dep_not_detected / dep_total * 100):.1f}%'}
+                    }
+                
+                # Punctuality arrival
+                arr_on_time = data.get('arrivoInOrario', 0)
+                arr_late = data.get('arrivoInRitardo', 0)
+                arr_early = data.get('arrivoAnticipo', 0)
+                arr_not_detected = data.get('arrivoNonRilevato', 0)
+                arr_total = arr_on_time + arr_late + arr_early + arr_not_detected
+                
+                if arr_total > 0:
+                    stats['punctuality_arrival'] = {
+                        'In anticipo': {'value': arr_early, 'percentage': f'{(arr_early / arr_total * 100):.1f}%'},
+                        'In orario': {'value': arr_on_time, 'percentage': f'{(arr_on_time / arr_total * 100):.1f}%'},
+                        'In ritardo': {'value': arr_late, 'percentage': f'{(arr_late / arr_total * 100):.1f}%'},
+                        'Non rilevati': {'value': arr_not_detected, 'percentage': f'{(arr_not_detected / arr_total * 100):.1f}%'}
+                    }
+                
+                # Train categories
+                categories = {
+                    'Regionali': data.get('numREG', 0),
+                    'InterCity': data.get('numIC', 0),
+                    'EuroCity': data.get('numEC', 0),
+                    'EuroNotte': data.get('numEN', 0),
+                    'Frecce': data.get('numES', 0)
+                }
+                
+                if total_stops > 0:
+                    stats['categories'] = {
+                        k: {'value': v, 'percentage': f'{(v / total_stops * 100):.1f}%'} 
+                        for k, v in categories.items() if v > 0
+                    }
+                
+                # Worst trains (if available)
+                worst_dep = data.get('trenoPeggioreInPartenza', '')
+                worst_arr = data.get('trenoPeggioreInArrivo', '')
+                delay_dep = data.get('ritardoPartenzaTrenoPeggiore', 0)
+                delay_arr = data.get('ritardoArrivoTrenoPeggiore', 0)
+                
+                if worst_dep or worst_arr:
+                    stats['worst_trains'] = {}
+                    if worst_dep and delay_dep:
+                        stats['worst_trains']['departure'] = {
+                            'train': worst_dep,
+                            'delay_minutes': delay_dep
+                        }
+                    if worst_arr and delay_arr:
+                        stats['worst_trains']['arrival'] = {
+                            'train': worst_arr,
+                            'delay_minutes': delay_arr
+                        }
+                
+            except Exception as parse_err:
+                # If JSON parsing fails, keep the empty stats structure
+                pass
+        
+        return {
+            'success': True,
+            'data': stats,
+            'source': 'trainstats.altervista.org'
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Error fetching external station stats: {str(e)}"
         )
 
 

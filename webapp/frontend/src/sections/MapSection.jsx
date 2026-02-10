@@ -17,20 +17,26 @@ const StationPopup = ({ feature }) => {
   const coords = feature?.geometry?.coordinates;
 
   const handleViewStatistics = () => {
-    // Scroll to statistics section in the same page
+    // Navigate to statistics section with station code as query parameter
+    const newUrl = `?stationCode=${encodeURIComponent(code)}#statistics`;
+    window.history.pushState({}, '', newUrl);
+    
+    // Dispatch custom event to trigger filter update
+    window.dispatchEvent(new CustomEvent('stationSelected', { detail: { stationCode: code } }));
+    
+    // Scroll to statistics section
     const statsSection = document.getElementById('statistics');
     if (statsSection) {
       const headerOffset = 90;
       const elementPosition = statsSection.getBoundingClientRect().top;
       const offsetPosition = elementPosition + window.pageYOffset - headerOffset;
       
-      window.scrollTo({
-        top: offsetPosition,
-        behavior: 'smooth'
-      });
-      
-      // Update URL without reload
-      window.history.pushState({}, '', `#statistics?stationCode=${encodeURIComponent(code)}`);
+      setTimeout(() => {
+        window.scrollTo({
+          top: offsetPosition,
+          behavior: 'smooth'
+        });
+      }, 100);
     }
   };
 

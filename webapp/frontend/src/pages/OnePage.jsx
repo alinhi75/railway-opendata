@@ -6,6 +6,7 @@ import DashboardSection from '../sections/DashboardSection';
 import StatisticsSection from '../sections/StatisticsSection';
 import MapSection from '../sections/MapSection';
 import AboutSection from '../sections/AboutSection';
+import ErrorBoundary from '../components/ErrorBoundary';
 
 import './OnePage.css';
 
@@ -52,6 +53,22 @@ const OnePage = () => {
     }
   }, [location.search]);
 
+  // Listen for station selection events from map
+  useEffect(() => {
+    const handleStationSelected = (event) => {
+      const stationCode = event.detail?.stationCode;
+      if (stationCode) {
+        setAppliedFilters(prev => ({
+          ...prev,
+          stationCodes: [stationCode]
+        }));
+      }
+    };
+
+    window.addEventListener('stationSelected', handleStationSelected);
+    return () => window.removeEventListener('stationSelected', handleStationSelected);
+  }, []);
+
   useEffect(() => {
     if (location.hash) {
       // Delay 1 frame so layout is painted before measuring offsets.
@@ -82,7 +99,9 @@ const OnePage = () => {
       </section>
 
       <section id="statistics" className="onepage-section">
-        <StatisticsSection filters={appliedFilters} />
+        <ErrorBoundary title="Statistics section crashed">
+          <StatisticsSection filters={appliedFilters} />
+        </ErrorBoundary>
       </section>
 
       <section id="about" className="onepage-section">
