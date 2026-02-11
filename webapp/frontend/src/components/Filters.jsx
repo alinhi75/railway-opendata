@@ -28,6 +28,21 @@ const Filters = ({ onChange, initialFilters = {} }) => {
   const [mouseOverSuggestions, setMouseOverSuggestions] = useState(false); // Track if mouse is over suggestions to prevent closing on blur
   const mouseDownOnSuggestions = useRef(false); // Track if mouse is down on suggestions to prevent closing on blur
 
+  const [uploadStationsFile, setUploadStationsFile] = useState(null);
+  const [uploadZipFile, setUploadZipFile] = useState(null);
+  const [uploadStatus, setUploadStatus] = useState(null);
+  const [uploadStats, setUploadStats] = useState(null);
+  const [uploading, setUploading] = useState(false);
+  const [archives, setArchives] = useState([]);
+  const [selectedArchive, setSelectedArchive] = useState('');
+  const [revertStatus, setRevertStatus] = useState(null);
+  const [reverting, setReverting] = useState(false);
+  const [datasetChanged, setDatasetChanged] = useState(false);
+  const [applyingDataset, setApplyingDataset] = useState(false);
+  const [clearing, setClearing] = useState(false);
+  const [clearStatus, setClearStatus] = useState(null);
+  const [showClearConfirm, setShowClearConfirm] = useState(false);
+
   const dateRangeError = useMemo(() => {
     const s = (startDate || '').trim();
     const e = (endDate || '').trim();
@@ -65,6 +80,33 @@ const Filters = ({ onChange, initialFilters = {} }) => {
       }
     };
     fetchFiltersMeta();
+  }, []);
+
+  const refreshArchives = async () => {
+    try {
+      const res = await apiService.listArchives();
+      setArchives(res?.data?.archives || []);
+    } catch (err) {
+      console.warn('Could not load archives', err);
+    }
+  };
+
+  const refreshAvailableRange = async () => {
+    try {
+      const infoRes = await apiService.getDataInfo();
+      if (infoRes.data?.available_min_date && infoRes.data?.available_max_date) {
+        setAvailableDateRange({
+          start: infoRes.data.available_min_date,
+          end: infoRes.data.available_max_date,
+        });
+      }
+    } catch (err) {
+      console.warn('Could not refresh date range:', err);
+    }
+  };
+
+  useEffect(() => {
+    refreshArchives();
   }, []);
 
   useEffect(() => {
@@ -180,6 +222,95 @@ const Filters = ({ onChange, initialFilters = {} }) => {
     setRegions((prev) => prev.includes(region) ? prev.filter(r => r !== region) : [...prev, region]);
   };
 
+  const handleUpload = async () => {
+    if (uploading) return;
+    
+    // At least one file required
+    if (!uploadStationsFile && !uploadZipFile) {
+      setUploadStatus({ type: 'error', message: 'Select at least one file (stations.csv or ZIP archive).' });
+      return;
+    }
+
+    const formData = new FormData();
+    formData.append('upload_mode', 'full');
+    formData.append('precompute', 'true');
+
+    if (uploadStationsFile) {
+      formData.append('stations_file', uploadStationsFile);
+    }
+    if (uploadZipFile) {
+      formData.append('zip_file', uploadZipFile);
+    }
+
+    setUploading(true);
+    setUploadStatus({ type: 'info', message: 'Uploading files and queueing analysis...' });
+    setUploadStats(null);
+
+    try {
+      const res = await apiService.uploadDataset(formData);
+      const range = res?.data?.precompute_range;
+      const stats = res?.data?.upload_stats || {};
+      
+      const extra = range
+        ? ` Range: ${range.start_date} → ${range.end_date}${range.clamped_to_max_range ? ' (clamped)' : ''}.`
+        : '';
+      
+      setUploadStatus({ type: 'success', message: `Upload complete.${extra}` });
+      setUploadStats(stats);
+      setUploadStationsFile(null);
+      setUploadZipFile(null);
+      setDatasetChanged(true);
+      await refreshAvailableRange();
+      await refreshArchives();
+    } catch (err) {
+      console.error('Upload failed', err);
+      setUploadStatus({ type: 'error', message: 'Upload failed. Check backend logs for details.' });
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  const applyDataset = async () => {
+    if (applyingDataset) return;
+    setApplyingDataset(true);
+    try {
+      await refreshAvailableRange();
+      setDatasetChanged(false);
+      setUploadStatus({ type: 'success', message: '✓ Dataset applied successfully!' });
+      setTimeout(() => setUploadStatus(null), 3000);
+    } catch (err) {
+      console.error('Failed to apply dataset', err);
+      setUploadStatus({ type: 'error', message: 'Failed to apply dataset. Check console for details.' });
+    } finally {
+      setApplyingDataset(false);
+    }
+  };
+
+  const handleClearArchives = async () => {
+    setShowClearConfirm(true);
+  };
+
+  const confirmClearArchives = async () => {
+    setShowClearConfirm(false);
+    
+    if (clearing) return;
+    setClearing(true);
+    setClearStatus({ type: 'info', message: 'Clearing archives...' });
+
+    try {
+      await apiService.clearArchives();
+      setClearStatus({ type: 'success', message: '✓ Archives cleared successfully!' });
+      setSelectedArchive('');
+      await refreshArchives();
+      setTimeout(() => setClearStatus(null), 3000);
+    } catch (err) {
+      console.error('Clear archives failed', err);
+      setClearStatus({ type: 'error', message: 'Failed to clear archives. Check backend logs.' });
+    } finally {
+      setClearing(false);
+    }
+  };
+
   // Count active filters for display
   const activeFilterCount = [
     Boolean(startDate || endDate),
@@ -208,8 +339,199 @@ const Filters = ({ onChange, initialFilters = {} }) => {
           </div>
         </div>
       )}
-      
-      {/* Active Filters Summary */}
+
+      <section className="filters-section upload-section">
+        <h3>📤 Dataset Management</h3>
+        <div className="upload-panel">
+          {/* Dataset Status Panel */}
+          <div className="dataset-status-panel">
+            <div className="dataset-info">
+              <div className="dataset-info-item">
+                <span className="dataset-info-label">Current Data Range:</span>
+                <span className="dataset-info-value">
+                  {availableDateRange
+                    ? `${availableDateRange.start} → ${availableDateRange.end}`
+                    : 'Not available'}
+                </span>
+              </div>
+              {datasetChanged && (
+                <div className="dataset-pending-badge">
+                  ⚡ New data ready to apply
+                </div>
+              )}
+            </div>
+            
+            {/* Archive Management */}
+            <div className="archive-controls">
+              <span className="controls-label">Manage Archives:</span>
+              <div className="controls-group">
+                <select
+                  value={selectedArchive}
+                  onChange={(e) => setSelectedArchive(e.target.value)}
+                  disabled={reverting || archives.length === 0}
+                  className="archive-select"
+                >
+                  <option value="">Latest</option>
+                  {archives.map((a) => (
+                    <option key={a.stamp} value={a.stamp}>{a.stamp}</option>
+                  ))}
+                </select>
+                <button
+                  className="btn btn-secondary btn-sm"
+                  onClick={async () => {
+                    if (reverting) return;
+                    setRevertStatus({ type: 'info', message: 'Restoring dataset...' });
+                    setReverting(true);
+                    try {
+                      await apiService.revertArchive(selectedArchive || null);
+                      setRevertStatus({ type: 'success', message: 'Restore complete. Refreshing data range.' });
+                      setDatasetChanged(true);
+                      await refreshAvailableRange();
+                      await refreshArchives();
+                    } catch (err) {
+                      console.error('Restore failed', err);
+                      setRevertStatus({ type: 'error', message: 'Restore failed. Check backend logs.' });
+                    } finally {
+                      setReverting(false);
+                    }
+                  }}
+                  disabled={reverting || archives.length === 0}
+                  title="Restore a previous version of the dataset"
+                >
+                  {reverting ? 'Restoring...' : '↩️ Restore'}
+                </button>
+                {archives.length > 0 && (
+                  <button
+                    className="btn btn-link btn-sm"
+                    onClick={() => setSelectedArchive(archives[0].stamp)}
+                    disabled={reverting}
+                    title={`Reset to default (${archives[0].stamp})`}
+                  >
+                    Default ({archives[0].stamp})
+                  </button>
+                )}
+                {archives.length > 0 && (
+                  <button
+                    className="btn btn-danger btn-sm"
+                    onClick={handleClearArchives}
+                    disabled={clearing}
+                    title="Delete all archived datasets"
+                  >
+                    {clearing ? 'Clearing...' : '🗑️ Clear Archives'}
+                  </button>
+                )}
+              </div>
+            </div>
+            {revertStatus && (
+              <div className={`upload-status ${revertStatus.type}`}>
+                {revertStatus.message}
+              </div>
+            )}
+            {clearStatus && (
+              <div className={`upload-status ${clearStatus.type}`}>
+                {clearStatus.message}
+              </div>
+            )}
+          </div>
+
+          {/* Divider */}
+          <div className="upload-divider"></div>
+
+          {/* Upload Section */}
+          <div className="upload-section-content">
+            <p className="upload-hint">
+              <strong>Upload Instructions:</strong> Add <strong>stations.csv</strong> and/or a <strong>ZIP archive</strong> containing YYYY-MM-DD/trains.csv folders.
+            </p>
+            
+            <div className="upload-form">
+              <div className="upload-input-group">
+                <label className="upload-input-label">
+                  <span className="upload-input-title">📍 stations.csv</span>
+                  <span className="upload-input-desc">Station reference data (optional if already uploaded)</span>
+                  <input
+                    type="file"
+                    accept=".csv"
+                    onChange={(e) => setUploadStationsFile(e.target.files?.[0] || null)}
+                    disabled={uploading}
+                  />
+                  {uploadStationsFile && (
+                    <div className="upload-input-filename">✓ {uploadStationsFile.name}</div>
+                  )}
+                </label>
+              </div>
+
+              <div className="upload-input-group">
+                <label className="upload-input-label">
+                  <span className="upload-input-title">📦 ZIP Archive</span>
+                  <span className="upload-input-desc">YYYY-MM-DD/trains.csv folders (optional if only updating stations)</span>
+                  <input
+                    type="file"
+                    accept=".zip"
+                    onChange={(e) => setUploadZipFile(e.target.files?.[0] || null)}
+                    disabled={uploading}
+                  />
+                  {uploadZipFile && (
+                    <div className="upload-input-filename">✓ {uploadZipFile.name}</div>
+                  )}
+                </label>
+              </div>
+
+              <div className="upload-actions">
+                <button
+                  className="btn btn-primary btn-large"
+                  onClick={handleUpload}
+                  disabled={uploading || (!uploadStationsFile && !uploadZipFile)}
+                  title="Upload new dataset files"
+                >
+                  {uploading ? 'Uploading...' : '⬆️ Upload Dataset'}
+                </button>
+                
+                {datasetChanged && (
+                  <button
+                    className="btn btn-success btn-large"
+                    onClick={applyDataset}
+                    disabled={applyingDataset}
+                    title="Apply the new dataset to the application"
+                  >
+                    {applyingDataset ? 'Applying...' : '✓ Apply Dataset'}
+                  </button>
+                )}
+              </div>
+            </div>
+
+            {uploadStatus && (
+              <div className={`upload-status ${uploadStatus.type}`}>
+                {uploadStatus.message}
+              </div>
+            )}
+
+            {uploadStats && Object.keys(uploadStats).length > 0 && (
+              <div className="upload-stats">
+                <div className="stats-title">📊 Upload Summary</div>
+                {uploadStats.stations_uploaded && (
+                  <div className="stat-item">
+                    <span className="stat-label">Stations file:</span>
+                    <span className="stat-value">✓ Uploaded</span>
+                  </div>
+                )}
+                {uploadStats.train_dates && uploadStats.train_dates.length > 0 && (
+                <div className="stat-item">
+                  <span className="stat-label">Train data dates:</span>
+                  <span className="stat-value">{uploadStats.train_dates.length} folders</span>
+                </div>
+              )}
+              {uploadStats.date_range && (
+                <div className="stat-item">
+                  <span className="stat-label">Date range:</span>
+                  <span className="stat-value">{uploadStats.date_range.start} to {uploadStats.date_range.end}</span>
+                </div>
+              )}
+            </div>
+          )}
+          </div>
+        </div>
+      </section>
+
       {activeFilterCount > 0 && (
         <div className="active-filters-summary">
           <strong>Active Filters:</strong>
@@ -386,6 +708,43 @@ const Filters = ({ onChange, initialFilters = {} }) => {
           ))}
         </div>
       </section>
+
+      {/* Clear Archives Confirmation Modal */}
+      {showClearConfirm && (
+        <>
+          <div className="modal-overlay" onClick={() => setShowClearConfirm(false)}></div>
+          <div className="modal-dialog clear-confirm-modal">
+            <div className="modal-content">
+              <div className="modal-header">
+                <div className="modal-title-icon">⚠️</div>
+                <h2 className="modal-title">Clear All Archives?</h2>
+              </div>
+              
+              <div className="modal-body">
+                <p>This will <strong>permanently delete</strong> all archived datasets.</p>
+                <p className="modal-warning">This action <strong>cannot be undone</strong>.</p>
+              </div>
+
+              <div className="modal-footer">
+                <button
+                  className="btn btn-secondary"
+                  onClick={() => setShowClearConfirm(false)}
+                  disabled={clearing}
+                >
+                  Cancel
+                </button>
+                <button
+                  className="btn btn-danger"
+                  onClick={confirmClearArchives}
+                  disabled={clearing}
+                >
+                  {clearing ? 'Clearing...' : 'Delete Archives'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </>
+      )}
     </div>
   );
 };

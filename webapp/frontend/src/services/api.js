@@ -76,6 +76,28 @@ export const apiService = {
    */
   getStations: (params = {}) => api.get('/stations', { params }),
 
+  // ===== DATASET UPLOAD =====
+
+  uploadDataset: (formData) => api.post('/data/upload', formData, {
+    headers: { 'Content-Type': 'multipart/form-data' },
+  }),
+
+  getDataInfo: () => api.get('/data/info'),
+
+  listArchives: () => api.get('/data/archives'),
+
+  revertArchive: (stamp = null) => {
+    const form = new FormData();
+    if (stamp) form.append('stamp', stamp);
+    return api.post('/data/revert', form, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    });
+  },
+
+  clearArchives: () => api.post('/data/clear-archives', {}, {
+    headers: { 'Content-Type': 'application/json' },
+  }),
+
   // ===== FUTURE ENDPOINTS (for filtering) =====
 
   /**

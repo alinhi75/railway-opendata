@@ -9,15 +9,19 @@ Railway OpenData - FastAPI Backend
 Serves precomputed statistics and data for the frontend
 """
 
-from fastapi import FastAPI, HTTPException
+from fastapi import BackgroundTasks, FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 import hashlib
 import json
 import csv
+import os
 from pathlib import Path
+import shutil
+import tempfile
+import zipfile
 from typing import Any, Dict, Iterable, List, Optional
-from datetime import date
+from datetime import date, datetime, timedelta
 import numpy as np
 from src.const import RailwayCompany
 
@@ -153,6 +157,213 @@ def _parse_csv_list(value: Optional[str]) -> List[str]:
 def _cache_suffix(payload: Dict[str, Any]) -> str:
     raw = json.dumps(payload, sort_keys=True, ensure_ascii=False).encode("utf-8")
     return hashlib.sha256(raw).hexdigest()[:12]
+
+
+def _is_date_dir_name(name: str) -> bool:
+    try:
+        date.fromisoformat(name)
+        return True
+    except Exception:
+        return False
+
+
+def _safe_relpath(path_value: str) -> str:
+    raw = (path_value or "").replace("\\", "/").lstrip("/")
+    parts = [p for p in raw.split("/") if p]
+    if any(p == ".." for p in parts):
+        raise HTTPException(status_code=400, detail="Invalid path in upload payload")
+    return "/".join(parts)
+
+
+def _write_upload_files(root: Path, files: List[UploadFile], paths: Optional[List[str]]) -> None:
+    if paths and len(paths) != len(files):
+        raise HTTPException(status_code=400, detail="Upload paths count does not match files count")
+
+    for idx, f in enumerate(files):
+        rel = paths[idx] if paths else f.filename
+        rel = _safe_relpath(rel or "")
+        if not rel:
+            continue
+        if rel.endswith("/"):
+            continue
+        target = root / rel
+        target.parent.mkdir(parents=True, exist_ok=True)
+        with open(target, "wb") as out:
+            shutil.copyfileobj(f.file, out)
+
+
+def _safe_extract_zip(zip_path: Path, dest: Path) -> None:
+    with zipfile.ZipFile(zip_path, "r") as zf:
+        for info in zf.infolist():
+            name = info.filename.replace("\\", "/")
+            if name.startswith("/"):
+                raise HTTPException(status_code=400, detail="Invalid zip entry path")
+            if name.startswith("__MACOSX/") or name.endswith(".DS_Store"):
+                continue
+            if any(p == ".." for p in Path(name).parts):
+                raise HTTPException(status_code=400, detail="Invalid zip entry path")
+            if info.is_dir():
+                continue
+            target = dest / name
+            target.parent.mkdir(parents=True, exist_ok=True)
+            with zf.open(info) as src, open(target, "wb") as out:
+                shutil.copyfileobj(src, out)
+
+
+def _find_dataset_root(root: Path) -> Path:
+    """Find the root directory containing YYYY-MM-DD/trains.csv folders.
+    
+    stations.csv is optional here since it may be uploaded separately.
+    We just need at least one date folder with trains.csv.
+    """
+    candidates: List[Path] = []
+    for dirpath, dirnames, filenames in os.walk(root):
+        candidate = Path(dirpath)
+        has_train_dir = False
+        for child in candidate.iterdir():
+            if child.is_dir() and _is_date_dir_name(child.name) and (child / "trains.csv").exists():
+                has_train_dir = True
+                break
+        if has_train_dir:
+            candidates.append(candidate)
+
+    if not candidates:
+        raise HTTPException(
+            status_code=400,
+            detail="ZIP must include at least one YYYY-MM-DD folder with trains.csv",
+        )
+
+    candidates.sort(key=lambda p: len(p.parts))
+    return candidates[0]
+
+
+def _archive_existing_dataset() -> Optional[Path]:
+    archive_root = WEBAPP_DATA_DIR / "_archive"
+    archive_root.mkdir(parents=True, exist_ok=True)
+    stamp = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
+    archive_dir = archive_root / stamp
+
+    moved = False
+    for item in WEBAPP_DATA_DIR.iterdir():
+        if item.name.startswith("_"):
+            continue
+        if item.is_dir() and _is_date_dir_name(item.name):
+            archive_dir.mkdir(parents=True, exist_ok=True)
+            shutil.move(str(item), archive_dir / item.name)
+            moved = True
+            continue
+        if item.is_file() and item.name in {"stations.csv", "stations.clean.csv", "stations.geojson"}:
+            archive_dir.mkdir(parents=True, exist_ok=True)
+            shutil.move(str(item), archive_dir / item.name)
+            moved = True
+
+    if DATA_DIR.exists():
+        archive_dir.mkdir(parents=True, exist_ok=True)
+        shutil.move(str(DATA_DIR), archive_dir / "outputs")
+        moved = True
+
+    return archive_dir if moved else None
+
+
+def _list_archives() -> List[Path]:
+    archive_root = WEBAPP_DATA_DIR / "_archive"
+    if not archive_root.exists():
+        return []
+    return sorted([p for p in archive_root.iterdir() if p.is_dir()], key=lambda p: p.name)
+
+
+def _restore_archive(stamp: Optional[str] = None) -> Path:
+    """Restore a previously archived dataset into webapp/data.
+
+    - Archives the current dataset first (so revert is reversible).
+    - Restores stations, date folders, and precomputed outputs if present.
+    """
+    archives = _list_archives()
+    if not archives:
+        raise HTTPException(status_code=404, detail="No archived datasets to restore")
+
+    archive_root = WEBAPP_DATA_DIR / "_archive"
+    if stamp:
+        candidate = archive_root / stamp
+        if not candidate.exists():
+            raise HTTPException(status_code=404, detail=f"Archive {stamp} not found")
+        target = candidate
+    else:
+        target = archives[-1]
+
+    # Preserve current dataset by archiving it first.
+    _archive_existing_dataset()
+
+    # Clean current data dir (except _archive itself) before restore.
+    for item in WEBAPP_DATA_DIR.iterdir():
+        if item.name.startswith("_archive"):
+            continue
+        if item.is_dir():
+            shutil.rmtree(item)
+        else:
+            item.unlink()
+
+    # Copy archived contents back.
+    for item in target.iterdir():
+        dest = WEBAPP_DATA_DIR / item.name
+        if item.is_dir():
+            shutil.copytree(item, dest)
+        else:
+            shutil.copy2(item, dest)
+
+    _STATIONS_CACHE["mtime"] = None
+    _STATIONS_CACHE["by_code"] = None
+    _STATIONS_CACHE["codes_by_region_name"] = None
+    return target
+
+
+def _copy_dataset_into_webapp(dataset_root: Path) -> None:
+    for item in dataset_root.iterdir():
+        if item.is_file() and item.name in {"stations.csv", "stations.clean.csv", "stations.geojson"}:
+            shutil.copy2(item, WEBAPP_DATA_DIR / item.name)
+            continue
+        if item.is_dir() and _is_date_dir_name(item.name):
+            shutil.copytree(item, WEBAPP_DATA_DIR / item.name)
+
+    DATA_DIR.mkdir(parents=True, exist_ok=True)
+    RUNTIME_DIR.mkdir(parents=True, exist_ok=True)
+
+    _STATIONS_CACHE["mtime"] = None
+    _STATIONS_CACHE["by_code"] = None
+    _STATIONS_CACHE["codes_by_region_name"] = None
+
+
+def _pick_precompute_range() -> tuple[date, date, bool]:
+    min_d, max_d = _infer_available_date_range()
+    total_days = (max_d - min_d).days + 1
+    if total_days > MAX_RANGE_DAYS:
+        start = max_d - timedelta(days=MAX_RANGE_DAYS - 1)
+        return start, max_d, True
+    return min_d, max_d, False
+
+
+def _precompute_default_outputs() -> Dict[str, Any]:
+    start_d, end_d, clamped = _pick_precompute_range()
+    get_describe_stats(
+        start_date=start_d.isoformat(),
+        end_date=end_d.isoformat(),
+        recompute=True,
+    )
+    get_delay_boxplot(
+        start_date=start_d.isoformat(),
+        end_date=end_d.isoformat(),
+        recompute=True,
+    )
+    get_day_train_count(
+        start_date=start_d.isoformat(),
+        end_date=end_d.isoformat(),
+        recompute=True,
+    )
+    return {
+        "start_date": start_d.isoformat(),
+        "end_date": end_d.isoformat(),
+        "clamped_to_max_range": clamped,
+    }
 
 
 def _list_train_csv_files(s: date, e: date) -> List[Path]:
@@ -391,6 +602,207 @@ def health():
     return {"status": "ok"}
 
 
+@app.get("/data/info")
+def get_data_info():
+    """Return info about the current local dataset."""
+    try:
+        min_d, max_d = _infer_available_date_range()
+        return {
+            "available_min_date": min_d.isoformat(),
+            "available_max_date": max_d.isoformat(),
+            "data_root": str(WEBAPP_DATA_DIR),
+        }
+    except HTTPException as exc:
+        raise exc
+    except Exception:
+        return {
+            "available_min_date": None,
+            "available_max_date": None,
+            "data_root": str(WEBAPP_DATA_DIR),
+        }
+
+
+@app.get("/data/archives")
+def list_archived_datasets():
+    """List available archived datasets (newest last)."""
+    archives = _list_archives()
+    return {
+        "archives": [
+            {
+                "stamp": p.name,
+                "path": str(p),
+            }
+            for p in archives
+        ]
+    }
+
+
+@app.post("/data/revert")
+def revert_to_archive(stamp: Optional[str] = Form(None)):
+    """Restore the most recent (or specified) archived dataset."""
+    restored = _restore_archive(stamp)
+    return {
+        "status": "ok",
+        "restored_from": restored.name,
+    }
+
+
+@app.post("/data/clear-archives")
+def clear_all_archives():
+    """Delete all archived datasets. Only removes temporary backups in _archive, not current data."""
+    archive_root = WEBAPP_DATA_DIR / "_archive"
+    
+    if archive_root.exists():
+        try:
+            shutil.rmtree(archive_root)
+            print(f"[INFO] All archives cleared successfully")
+        except Exception as e:
+            print(f"[ERROR] Failed to clear archives: {e}")
+            raise HTTPException(status_code=500, detail=f"Failed to clear archives: {str(e)}")
+    
+    return {
+        "status": "ok",
+        "message": "All archives cleared successfully",
+    }
+
+
+@app.post("/data/upload")
+async def upload_data(
+    background_tasks: BackgroundTasks,
+    upload_mode: Optional[str] = Form(None),
+    precompute: bool = Form(True),
+    file: Optional[UploadFile] = File(None),
+    files: Optional[List[UploadFile]] = File(None),
+    paths: Optional[List[str]] = Form(None),
+    stations_file: Optional[UploadFile] = File(None),
+    zip_file: Optional[UploadFile] = File(None),
+):
+    """Upload a dataset (ZIP or folder contents) and replace the local webapp dataset."""
+    mode = (upload_mode or "").strip().lower()
+    if mode not in {"zip", "folder", "stations", "full", ""}:
+        raise HTTPException(status_code=400, detail="upload_mode must be 'zip', 'folder', 'stations', or 'full'")
+
+    upload_stats = {}
+
+    # Handle "full" mode - both stations and ZIP files
+    if mode == "full":
+        if stations_file:
+            if not (stations_file.filename or "").lower().endswith(".csv"):
+                raise HTTPException(status_code=400, detail="Stations file must be .csv")
+            stations_path = STATIONS_CSV_PATH
+            with open(stations_path, "wb") as out:
+                shutil.copyfileobj(stations_file.file, out)
+            upload_stats["stations_uploaded"] = True
+
+        if zip_file:
+            if not (zip_file.filename or "").lower().endswith(".zip"):
+                raise HTTPException(status_code=400, detail="ZIP file must be .zip")
+            with tempfile.TemporaryDirectory() as tmpdir:
+                tmp_root = Path(tmpdir)
+                zip_path = tmp_root / "upload.zip"
+                with open(zip_path, "wb") as out:
+                    shutil.copyfileobj(zip_file.file, out)
+                extract_root = tmp_root / "extracted"
+                extract_root.mkdir(parents=True, exist_ok=True)
+                _safe_extract_zip(zip_path, extract_root)
+                dataset_root = _find_dataset_root(extract_root)
+
+                _archive_existing_dataset()
+                _copy_dataset_into_webapp(dataset_root)
+                
+                # Compute upload stats from imported data
+                train_dates = []
+                for item in WEBAPP_DATA_DIR.iterdir():
+                    if item.is_dir() and _is_date_dir_name(item.name):
+                        train_dates.append(item.name)
+                train_dates.sort()
+                if train_dates:
+                    upload_stats["train_dates"] = train_dates
+                    upload_stats["date_range"] = {
+                        "start": train_dates[0],
+                        "end": train_dates[-1]
+                    }
+
+        if not stations_file and not zip_file:
+            raise HTTPException(status_code=400, detail="At least one file (stations or ZIP) required")
+
+        precompute_range = None
+        if precompute and zip_file:
+            precompute_range = _pick_precompute_range()
+            background_tasks.add_task(_precompute_default_outputs)
+
+        return {
+            "status": "ok",
+            "precompute": bool(precompute and zip_file),
+            "upload_stats": upload_stats,
+            "precompute_range": {
+                "start_date": precompute_range[0].isoformat(),
+                "end_date": precompute_range[1].isoformat(),
+                "clamped_to_max_range": precompute_range[2],
+            } if precompute_range else None,
+        }
+
+    if mode == "stations":
+        if not file:
+            raise HTTPException(status_code=400, detail="Missing upload file")
+        if not (file.filename or "").lower().endswith(".csv"):
+            raise HTTPException(status_code=400, detail="Stations upload requires a .csv file")
+        # Save stations.csv directly to the data directory
+        stations_path = STATIONS_CSV_PATH
+        with open(stations_path, "wb") as out:
+            shutil.copyfileobj(file.file, out)
+        return {
+            "status": "ok",
+            "precompute": False,
+            "precompute_range": None,
+        }
+
+    if mode == "zip" or (mode == "" and file is not None):
+        if not file:
+            raise HTTPException(status_code=400, detail="Missing upload file")
+        if not (file.filename or "").lower().endswith(".zip"):
+            raise HTTPException(status_code=400, detail="ZIP upload requires a .zip file")
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmp_root = Path(tmpdir)
+            zip_path = tmp_root / "upload.zip"
+            with open(zip_path, "wb") as out:
+                shutil.copyfileobj(file.file, out)
+            extract_root = tmp_root / "extracted"
+            extract_root.mkdir(parents=True, exist_ok=True)
+            _safe_extract_zip(zip_path, extract_root)
+            dataset_root = _find_dataset_root(extract_root)
+
+            _archive_existing_dataset()
+            _copy_dataset_into_webapp(dataset_root)
+    else:
+        if not files:
+            raise HTTPException(status_code=400, detail="Missing upload files")
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmp_root = Path(tmpdir)
+            upload_root = tmp_root / "extracted"
+            upload_root.mkdir(parents=True, exist_ok=True)
+            _write_upload_files(upload_root, files, paths)
+            dataset_root = _find_dataset_root(upload_root)
+
+            _archive_existing_dataset()
+            _copy_dataset_into_webapp(dataset_root)
+
+    precompute_range = None
+    if precompute:
+        precompute_range = _pick_precompute_range()
+        background_tasks.add_task(_precompute_default_outputs)
+
+    return {
+        "status": "ok",
+        "precompute": bool(precompute),
+        "precompute_range": {
+            "start_date": precompute_range[0].isoformat(),
+            "end_date": precompute_range[1].isoformat(),
+            "clamped_to_max_range": precompute_range[2],
+        } if precompute_range else None,
+    }
+
+
 @app.get("/stats/describe")
 def get_describe_stats(
     start_date: Optional[str] = None,
@@ -512,11 +924,11 @@ def get_describe_stats(
         "describe": {k: {sk: _as_number(sv) for sk, sv in (v or {}).items()} for k, v in table.items()},
     }
 
+    sanitized = sanitize_for_json(payload)
     with open(cache_json, "w", encoding="utf-8") as f:
-        sanitized = sanitize_for_json(payload)
         json.dump(sanitized, f, ensure_ascii=False)
 
-    return payload
+    return sanitized
 
 
 
