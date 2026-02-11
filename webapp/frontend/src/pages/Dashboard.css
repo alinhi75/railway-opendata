@@ -135,6 +135,43 @@
   line-height: 1.6;
 }
 
+/* Empty Data State */
+.empty-state {
+  background: #fff7ed;
+  border: 1px solid #fed7aa;
+  border-radius: 12px;
+  padding: 16px 18px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 24px;
+}
+
+.empty-icon {
+  width: 36px;
+  height: 36px;
+  border-radius: 10px;
+  background: #ffedd5;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 18px;
+  color: #9a3412;
+}
+
+.empty-text {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  color: #7c2d12;
+  font-size: 14px;
+}
+
+.empty-text strong {
+  font-size: 15px;
+  color: #9a3412;
+}
+
 /* Summary Section */
 .summary-section {
   margin-bottom: 40px;

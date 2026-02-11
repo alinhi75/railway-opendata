@@ -59,17 +59,19 @@
 .view-mode-selector button {
   flex: 1;
   padding: 12px 20px;
-  border: 2px solid transparent;
+  border: 2px solid #ddd;
   background: white;
   border-radius: 6px;
   font-size: 14px;
   font-weight: 600;
   cursor: pointer;
   transition: all 0.3s ease;
+  color: #666;
 }
 
 .view-mode-selector button:hover {
   border-color: #667eea;
+  background: #f9f9f9;
 }
 
 .view-mode-selector button.active {

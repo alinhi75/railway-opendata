@@ -99,6 +99,15 @@ const DashboardSection = ({ filters = {} }) => {
           </div>
         ) : (
           <>
+            {Number(metric.count) === 0 && (
+              <div className="empty-state">
+                <div className="empty-icon">⚠️</div>
+                <div className="empty-text">
+                  <strong>Not enough data for this station.</strong>
+                  <span>Try a wider date range or remove the station filter.</span>
+                </div>
+              </div>
+            )}
             <section className="summary-section">
               <h2 className="section-title">Key Metrics</h2>
               <div className="summary-grid">

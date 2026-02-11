@@ -91,10 +91,6 @@ const OnePage = () => {
 
   return (
     <div className="onepage" id="top">
-      <section id="dashboard" className="onepage-section">
-        <DashboardSection filters={appliedFilters} />
-      </section>
-
       <section id="map" className="onepage-section">
         <div className="onepage-container">
           <div className="dashboard-header">
@@ -109,6 +105,10 @@ const OnePage = () => {
             <MapSection filters={appliedFilters} />
           </div>
         </div>
+      </section>
+
+      <section id="dashboard" className="onepage-section">
+        <DashboardSection filters={appliedFilters} />
       </section>
 
       <section id="statistics" className="onepage-section">

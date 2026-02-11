@@ -6,10 +6,6 @@
   scroll-margin-top: 90px;
 }
 
-.onepage-section + .onepage-section {
-  margin-top: 48px;
-}
-
 #map .onepage-container {
   max-width: 1400px;
   margin: 0 auto;
