@@ -7,7 +7,7 @@ import './DashboardSection.css';
  * Dashboard Section
  * Formerly: pages/Dashboard
  */
-const DashboardSection = ({ filters = {} }) => {
+const DashboardSection = ({ filters = {}, datasetVersion = 0 }) => {
   const [stats, setStats] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -48,7 +48,7 @@ const DashboardSection = ({ filters = {} }) => {
     };
 
     fetchStats();
-  }, [apiParams]);
+  }, [apiParams, datasetVersion]);
 
   const getMetric = () => {
     if (!stats) return { mean: 'N/A', std: 'N/A', min: 'N/A', max: 'N/A', count: 0 };

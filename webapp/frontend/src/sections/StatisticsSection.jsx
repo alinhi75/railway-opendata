@@ -10,7 +10,7 @@ const toApiUrl = (p) => (p && typeof p === 'string' && p.startsWith('/') ? `${AP
  * Statistics Section
  * Formerly: pages/Statistics
  */
-const StatisticsSection = ({ filters = {} }) => {
+const StatisticsSection = ({ filters = {}, datasetVersion = 0 }) => {
   const [delayBoxplotPath, setDelayBoxplotPath] = useState(null);
   const [trainCountPath, setTrainCountPath] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -113,7 +113,7 @@ const StatisticsSection = ({ filters = {} }) => {
       }
     };
     fetchAvailableMonths();
-  }, []);
+  }, [datasetVersion]);
 
   useEffect(() => {
     const fetchAvailableDateRange = async () => {
@@ -132,7 +132,7 @@ const StatisticsSection = ({ filters = {} }) => {
     };
 
     fetchAvailableDateRange();
-  }, []);
+  }, [datasetVersion]);
 
   useEffect(() => {
     const fetchStatistics = async () => {
@@ -211,7 +211,7 @@ const StatisticsSection = ({ filters = {} }) => {
       return;
     }
     fetchStatistics();
-  }, [filters, viewMode, selectedYear, selectedMonth, customStartDate, customEndDate]);
+  }, [filters, viewMode, selectedYear, selectedMonth, customStartDate, customEndDate, datasetVersion]);
 
   const availableYears = [...new Set(availableMonths.map((m) => m.year))].sort((a, b) => b - a);
   const monthsForYear = selectedYear

@@ -9,9 +9,10 @@ import './Filters.css';
  *
  * Props:
  * - onChange(filters): callback invoked when filters change
+ * - onDatasetApplied(): callback invoked when dataset is applied
  * - initialFilters: optional initial filter values
  */
-const Filters = ({ onChange, initialFilters = {} }) => {
+const Filters = ({ onChange, onDatasetApplied, initialFilters = {} }) => {
   const [companies, setCompanies] = useState(initialFilters.companies || []);
   const [regions, setRegions] = useState(initialFilters.regions || []);
   const [startDate, setStartDate] = useState(initialFilters.startDate || '');
@@ -22,6 +23,7 @@ const Filters = ({ onChange, initialFilters = {} }) => {
   const [availableCompanies, setAvailableCompanies] = useState([]);
   const [availableRegions, setAvailableRegions] = useState([]);
   const [availableDateRange, setAvailableDateRange] = useState(null);
+  const [currentDatasetName, setCurrentDatasetName] = useState('');
   const [stationSuggestions, setStationSuggestions] = useState([]);
   const [stationLoading, setStationLoading] = useState(false);
   const [dropdownOpen, setDropdownOpen] = useState(false);
@@ -30,6 +32,7 @@ const Filters = ({ onChange, initialFilters = {} }) => {
 
   const [uploadStationsFile, setUploadStationsFile] = useState(null);
   const [uploadZipFile, setUploadZipFile] = useState(null);
+  const [datasetName, setDatasetName] = useState('');
   const [uploadStatus, setUploadStatus] = useState(null);
   const [uploadStats, setUploadStats] = useState(null);
   const [uploading, setUploading] = useState(false);
@@ -100,6 +103,7 @@ const Filters = ({ onChange, initialFilters = {} }) => {
           end: infoRes.data.available_max_date,
         });
       }
+      setCurrentDatasetName(infoRes.data?.dataset_name || '');
     } catch (err) {
       console.warn('Could not refresh date range:', err);
     }
@@ -241,6 +245,9 @@ const Filters = ({ onChange, initialFilters = {} }) => {
     if (uploadZipFile) {
       formData.append('zip_file', uploadZipFile);
     }
+    if (datasetName.trim()) {
+      formData.append('dataset_name', datasetName.trim());
+    }
 
     setUploading(true);
     setUploadStatus({ type: 'info', message: 'Uploading files and queueing analysis...' });
@@ -259,6 +266,7 @@ const Filters = ({ onChange, initialFilters = {} }) => {
       setUploadStats(stats);
       setUploadStationsFile(null);
       setUploadZipFile(null);
+      setDatasetName('');
       setDatasetChanged(true);
       await refreshAvailableRange();
       await refreshArchives();
@@ -276,6 +284,7 @@ const Filters = ({ onChange, initialFilters = {} }) => {
     try {
       await refreshAvailableRange();
       setDatasetChanged(false);
+      onDatasetApplied?.();
       setUploadStatus({ type: 'success', message: '✓ Dataset applied successfully!' });
       setTimeout(() => setUploadStatus(null), 3000);
     } catch (err) {
@@ -354,6 +363,12 @@ const Filters = ({ onChange, initialFilters = {} }) => {
                     : 'Not available'}
                 </span>
               </div>
+              {currentDatasetName && (
+                <div className="dataset-info-item">
+                  <span className="dataset-info-label">Current Dataset:</span>
+                  <span className="dataset-info-value">{currentDatasetName}</span>
+                </div>
+              )}
               {datasetChanged && (
                 <div className="dataset-pending-badge">
                   ⚡ New data ready to apply
@@ -371,9 +386,13 @@ const Filters = ({ onChange, initialFilters = {} }) => {
                   disabled={reverting || archives.length === 0}
                   className="archive-select"
                 >
-                  <option value="">Latest</option>
+                  <option value="">
+                    {currentDatasetName ? `Latest (${currentDatasetName})` : 'Latest'}
+                  </option>
                   {archives.map((a) => (
-                    <option key={a.stamp} value={a.stamp}>{a.stamp}</option>
+                    <option key={a.stamp} value={a.stamp}>
+                      {a.name ? `${a.name} (${a.stamp})` : a.stamp}
+                    </option>
                   ))}
                 </select>
                 <button
@@ -407,7 +426,7 @@ const Filters = ({ onChange, initialFilters = {} }) => {
                     disabled={reverting}
                     title={`Reset to default (${archives[0].stamp})`}
                   >
-                    Default ({archives[0].stamp})
+                    Default ({archives[0].name ? `${archives[0].name} (${archives[0].stamp})` : archives[0].stamp})
                   </button>
                 )}
                 {archives.length > 0 && (
@@ -444,6 +463,20 @@ const Filters = ({ onChange, initialFilters = {} }) => {
             </p>
             
             <div className="upload-form">
+              <div className="upload-input-group">
+                <label className="upload-input-label">
+                  <span className="upload-input-title">🏷️ Dataset name</span>
+                  <span className="upload-input-desc">Shown in archive history</span>
+                  <input
+                    type="text"
+                    value={datasetName}
+                    onChange={(e) => setDatasetName(e.target.value)}
+                    placeholder="e.g., Full dataset 2024-2025"
+                    disabled={uploading}
+                  />
+                </label>
+              </div>
+
               <div className="upload-input-group">
                 <label className="upload-input-label">
                   <span className="upload-input-title">📍 stations.csv</span>

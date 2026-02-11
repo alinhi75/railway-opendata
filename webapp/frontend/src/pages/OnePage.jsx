@@ -26,6 +26,7 @@ const OnePage = () => {
   const location = useLocation();
   const [appliedFilters, setAppliedFilters] = useState({});
   const [initialFiltersFromUrl, setInitialFiltersFromUrl] = useState({});
+  const [datasetVersion, setDatasetVersion] = useState(0);
 
   useEffect(() => {
     // Parse URL query parameters for initial filters
@@ -101,19 +102,23 @@ const OnePage = () => {
           </div>
 
           <div className="map-section-content">
-            <Filters onChange={setAppliedFilters} initialFilters={initialFiltersFromUrl} />
-            <MapSection filters={appliedFilters} />
+            <Filters
+              onChange={setAppliedFilters}
+              onDatasetApplied={() => setDatasetVersion((v) => v + 1)}
+              initialFilters={initialFiltersFromUrl}
+            />
+            <MapSection filters={appliedFilters} datasetVersion={datasetVersion} />
           </div>
         </div>
       </section>
 
       <section id="dashboard" className="onepage-section">
-        <DashboardSection filters={appliedFilters} />
+        <DashboardSection filters={appliedFilters} datasetVersion={datasetVersion} />
       </section>
 
       <section id="statistics" className="onepage-section">
         <ErrorBoundary title="Statistics section crashed">
-          <StatisticsSection filters={appliedFilters} />
+          <StatisticsSection filters={appliedFilters} datasetVersion={datasetVersion} />
         </ErrorBoundary>
       </section>
 

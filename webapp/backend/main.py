@@ -45,6 +45,8 @@ WEBAPP_DATA_DIR = Path(__file__).parent.parent / "data"
 DATA_DIR = WEBAPP_DATA_DIR / "outputs"
 DATA_RAW_DIR = WEBAPP_DATA_DIR
 STATIONS_CSV_PATH = WEBAPP_DATA_DIR / "stations.csv"
+DEFAULT_DATA_DIR = WEBAPP_DATA_DIR / "_default"
+DATASET_META_FILENAME = "dataset.meta.json"
 REGION_CODE_TO_NAME: Dict[int, str] = {
     1: "Lombardia",
     2: "Liguria",
@@ -256,6 +258,11 @@ def _archive_existing_dataset() -> Optional[Path]:
             archive_dir.mkdir(parents=True, exist_ok=True)
             shutil.move(str(item), archive_dir / item.name)
             moved = True
+            continue
+        if item.is_file() and item.name == DATASET_META_FILENAME:
+            archive_dir.mkdir(parents=True, exist_ok=True)
+            shutil.move(str(item), archive_dir / item.name)
+            moved = True
 
     if DATA_DIR.exists():
         archive_dir.mkdir(parents=True, exist_ok=True)
@@ -263,6 +270,82 @@ def _archive_existing_dataset() -> Optional[Path]:
         moved = True
 
     return archive_dir if moved else None
+
+
+def _dataset_has_content(root: Path) -> bool:
+    if not root.exists():
+        return False
+    if any((root / name).exists() for name in [
+        "stations.csv",
+        "stations.clean.csv",
+        "stations.geojson",
+    ]):
+        return True
+    for item in root.iterdir():
+        if item.is_dir() and _is_date_dir_name(item.name):
+            return True
+    return False
+
+
+def _write_dataset_meta(dest_dir: Path, name: Optional[str]) -> None:
+    if not name:
+        return
+    meta = {
+        "name": str(name).strip(),
+        "created_at": datetime.utcnow().isoformat(),
+    }
+    try:
+        with open(dest_dir / DATASET_META_FILENAME, "w", encoding="utf-8") as f:
+            json.dump(meta, f)
+    except Exception:
+        pass
+
+
+def _read_dataset_meta(meta_path: Path) -> Dict[str, Any]:
+    try:
+        with open(meta_path, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        if isinstance(data, dict):
+            return data
+    except Exception:
+        pass
+    return {}
+
+
+def _copy_dataset_contents(src: Path, dest: Path) -> None:
+    dest.mkdir(parents=True, exist_ok=True)
+    for item in src.iterdir():
+        if item.name.startswith("_"):
+            continue
+        if item.is_file() and item.name in {"stations.csv", "stations.clean.csv", "stations.geojson"}:
+            shutil.copy2(item, dest / item.name)
+            continue
+        if item.is_dir() and _is_date_dir_name(item.name):
+            shutil.copytree(item, dest / item.name)
+            continue
+        if item.is_dir() and item.name == "outputs":
+            shutil.copytree(item, dest / "outputs")
+        if item.is_file() and item.name == DATASET_META_FILENAME:
+            shutil.copy2(item, dest / item.name)
+
+
+def _clear_current_dataset() -> None:
+    for item in WEBAPP_DATA_DIR.iterdir():
+        if item.name in {"_archive", "_default"}:
+            continue
+        if item.is_dir():
+            shutil.rmtree(item)
+        else:
+            item.unlink()
+
+
+def _ensure_default_dataset() -> None:
+    if _dataset_has_content(DEFAULT_DATA_DIR):
+        return
+    if not _dataset_has_content(WEBAPP_DATA_DIR):
+        return
+    DEFAULT_DATA_DIR.mkdir(parents=True, exist_ok=True)
+    _copy_dataset_contents(WEBAPP_DATA_DIR, DEFAULT_DATA_DIR)
 
 
 def _list_archives() -> List[Path]:
@@ -292,16 +375,11 @@ def _restore_archive(stamp: Optional[str] = None) -> Path:
         target = archives[-1]
 
     # Preserve current dataset by archiving it first.
+    _ensure_default_dataset()
     _archive_existing_dataset()
 
-    # Clean current data dir (except _archive itself) before restore.
-    for item in WEBAPP_DATA_DIR.iterdir():
-        if item.name.startswith("_archive"):
-            continue
-        if item.is_dir():
-            shutil.rmtree(item)
-        else:
-            item.unlink()
+    # Clean current data dir (except _archive/_default) before restore.
+    _clear_current_dataset()
 
     # Copy archived contents back.
     for item in target.iterdir():
@@ -607,10 +685,12 @@ def get_data_info():
     """Return info about the current local dataset."""
     try:
         min_d, max_d = _infer_available_date_range()
+        meta = _read_dataset_meta(WEBAPP_DATA_DIR / DATASET_META_FILENAME)
         return {
             "available_min_date": min_d.isoformat(),
             "available_max_date": max_d.isoformat(),
             "data_root": str(WEBAPP_DATA_DIR),
+            "dataset_name": meta.get("name"),
         }
     except HTTPException as exc:
         raise exc
@@ -619,6 +699,7 @@ def get_data_info():
             "available_min_date": None,
             "available_max_date": None,
             "data_root": str(WEBAPP_DATA_DIR),
+            "dataset_name": None,
         }
 
 
@@ -631,6 +712,7 @@ def list_archived_datasets():
             {
                 "stamp": p.name,
                 "path": str(p),
+                "name": (_read_dataset_meta(p / DATASET_META_FILENAME).get("name") or None),
             }
             for p in archives
         ]
@@ -651,11 +733,18 @@ def revert_to_archive(stamp: Optional[str] = Form(None)):
 def clear_all_archives():
     """Delete all archived datasets. Only removes temporary backups in _archive, not current data."""
     archive_root = WEBAPP_DATA_DIR / "_archive"
-    
+
+    _ensure_default_dataset()
+
     if archive_root.exists():
         try:
+            # Reset current data to default before clearing archives.
+            if _dataset_has_content(DEFAULT_DATA_DIR):
+                _clear_current_dataset()
+                _copy_dataset_contents(DEFAULT_DATA_DIR, WEBAPP_DATA_DIR)
+
             shutil.rmtree(archive_root)
-            print(f"[INFO] All archives cleared successfully")
+            print("[INFO] All archives cleared successfully")
         except Exception as e:
             print(f"[ERROR] Failed to clear archives: {e}")
             raise HTTPException(status_code=500, detail=f"Failed to clear archives: {str(e)}")
@@ -671,6 +760,7 @@ async def upload_data(
     background_tasks: BackgroundTasks,
     upload_mode: Optional[str] = Form(None),
     precompute: bool = Form(True),
+    dataset_name: Optional[str] = Form(None),
     file: Optional[UploadFile] = File(None),
     files: Optional[List[UploadFile]] = File(None),
     paths: Optional[List[str]] = Form(None),
@@ -683,6 +773,7 @@ async def upload_data(
         raise HTTPException(status_code=400, detail="upload_mode must be 'zip', 'folder', 'stations', or 'full'")
 
     upload_stats = {}
+    _ensure_default_dataset()
 
     # Handle "full" mode - both stations and ZIP files
     if mode == "full":
@@ -726,6 +817,8 @@ async def upload_data(
         if not stations_file and not zip_file:
             raise HTTPException(status_code=400, detail="At least one file (stations or ZIP) required")
 
+        _write_dataset_meta(WEBAPP_DATA_DIR, dataset_name)
+
         precompute_range = None
         if precompute and zip_file:
             precompute_range = _pick_precompute_range()
@@ -751,6 +844,7 @@ async def upload_data(
         stations_path = STATIONS_CSV_PATH
         with open(stations_path, "wb") as out:
             shutil.copyfileobj(file.file, out)
+        _write_dataset_meta(WEBAPP_DATA_DIR, dataset_name)
         return {
             "status": "ok",
             "precompute": False,
@@ -774,6 +868,7 @@ async def upload_data(
 
             _archive_existing_dataset()
             _copy_dataset_into_webapp(dataset_root)
+            _write_dataset_meta(WEBAPP_DATA_DIR, dataset_name)
     else:
         if not files:
             raise HTTPException(status_code=400, detail="Missing upload files")
@@ -786,6 +881,7 @@ async def upload_data(
 
             _archive_existing_dataset()
             _copy_dataset_into_webapp(dataset_root)
+        _write_dataset_meta(WEBAPP_DATA_DIR, dataset_name)
 
     precompute_range = None
     if precompute:
@@ -1391,11 +1487,8 @@ def get_stations(
         except Exception as e:
             raise HTTPException(status_code=500, detail=f"Error reading stations.geojson: {str(e)}")
     
-    else:
-        raise HTTPException(
-            status_code=404,
-            detail="No station data found. Expected data/stations.csv (or stations.clean.csv or stations.geojson)"
-        )
+    # No station file exists: return an empty FeatureCollection so the UI can show an empty state.
+    return {"type": "FeatureCollection", "features": []}
 
 
 @app.get("/stats/external-station/{station_code}")

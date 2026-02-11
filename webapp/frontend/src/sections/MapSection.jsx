@@ -266,7 +266,7 @@ function AutoFitToRegions({ bounds, enabled }) {
   return null;
 }
 
-const MapSection = ({ filters = {} }) => {
+const MapSection = ({ filters = {}, datasetVersion = 0 }) => {
   const [stationsFc, setStationsFc] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -286,7 +286,7 @@ const MapSection = ({ filters = {} }) => {
       }
     };
     fetchStations();
-  }, []);
+  }, [datasetVersion]);
 
   const selectedStationFeatures = useMemo(() => {
     const features = stationsFc?.features || [];
