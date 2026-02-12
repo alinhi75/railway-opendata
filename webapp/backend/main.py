@@ -47,6 +47,8 @@ DATA_RAW_DIR = WEBAPP_DATA_DIR
 STATIONS_CSV_PATH = WEBAPP_DATA_DIR / "stations.csv"
 DEFAULT_DATA_DIR = WEBAPP_DATA_DIR / "_default"
 DATASET_META_FILENAME = "dataset.meta.json"
+DEFAULT_ARCHIVE_STAMP = "_default"
+CURRENT_ARCHIVE_STAMP = "_current"
 REGION_CODE_TO_NAME: Dict[int, str] = {
     1: "Lombardia",
     2: "Liguria",
@@ -355,24 +357,66 @@ def _list_archives() -> List[Path]:
     return sorted([p for p in archive_root.iterdir() if p.is_dir()], key=lambda p: p.name)
 
 
+def _default_archive_entry() -> Optional[Dict[str, Any]]:
+    if not _dataset_has_content(DEFAULT_DATA_DIR):
+        return None
+    meta = _read_dataset_meta(DEFAULT_DATA_DIR / DATASET_META_FILENAME)
+    name = meta.get("name") or "Bundled dataset"
+    return {
+        "stamp": DEFAULT_ARCHIVE_STAMP,
+        "path": str(DEFAULT_DATA_DIR),
+        "name": name,
+        "is_default": True,
+        "is_current": False,
+    }
+
+
+def _current_dataset_entry() -> Optional[Dict[str, Any]]:
+    if not _dataset_has_content(WEBAPP_DATA_DIR):
+        return None
+    meta = _read_dataset_meta(WEBAPP_DATA_DIR / DATASET_META_FILENAME)
+    name = meta.get("name")
+    if not name:
+        try:
+            min_d, max_d = _infer_available_date_range()
+            name = f"{min_d.isoformat()} → {max_d.isoformat()}"
+        except Exception:
+            name = "Current dataset"
+    return {
+        "stamp": CURRENT_ARCHIVE_STAMP,
+        "path": str(WEBAPP_DATA_DIR),
+        "name": name,
+        "is_default": False,
+        "is_current": True,
+    }
+
+
 def _restore_archive(stamp: Optional[str] = None) -> Path:
     """Restore a previously archived dataset into webapp/data.
 
     - Archives the current dataset first (so revert is reversible).
     - Restores stations, date folders, and precomputed outputs if present.
     """
-    archives = _list_archives()
-    if not archives:
-        raise HTTPException(status_code=404, detail="No archived datasets to restore")
-
     archive_root = WEBAPP_DATA_DIR / "_archive"
-    if stamp:
-        candidate = archive_root / stamp
-        if not candidate.exists():
-            raise HTTPException(status_code=404, detail=f"Archive {stamp} not found")
-        target = candidate
+
+    if stamp == DEFAULT_ARCHIVE_STAMP:
+        if not _dataset_has_content(DEFAULT_DATA_DIR):
+            raise HTTPException(status_code=404, detail="Default dataset not available")
+        target = DEFAULT_DATA_DIR
+    elif stamp == CURRENT_ARCHIVE_STAMP:
+        raise HTTPException(status_code=400, detail="Current dataset is already active")
     else:
-        target = archives[-1]
+        archives = _list_archives()
+        if not archives:
+            raise HTTPException(status_code=404, detail="No archived datasets to restore")
+
+        if stamp:
+            candidate = archive_root / stamp
+            if not candidate.exists():
+                raise HTTPException(status_code=404, detail=f"Archive {stamp} not found")
+            target = candidate
+        else:
+            target = archives[-1]
 
     # Preserve current dataset by archiving it first.
     _ensure_default_dataset()
@@ -393,6 +437,42 @@ def _restore_archive(stamp: Optional[str] = None) -> Path:
     _STATIONS_CACHE["by_code"] = None
     _STATIONS_CACHE["codes_by_region_name"] = None
     return target
+
+
+def _apply_archive(stamp: str) -> Path:
+    """Apply an archived dataset as the current dataset without creating a backup.
+
+    - Simply loads the specified archive as current data.
+    - Does NOT archive the current dataset first.
+    - Useful for quickly switching between datasets without backup overhead.
+    """
+    archive_root = WEBAPP_DATA_DIR / "_archive"
+    if stamp == DEFAULT_ARCHIVE_STAMP:
+        if not _dataset_has_content(DEFAULT_DATA_DIR):
+            raise HTTPException(status_code=404, detail="Default dataset not available")
+        candidate = DEFAULT_DATA_DIR
+    elif stamp == CURRENT_ARCHIVE_STAMP:
+        raise HTTPException(status_code=400, detail="Current dataset is already active")
+    else:
+        candidate = archive_root / stamp
+        if not candidate.exists():
+            raise HTTPException(status_code=404, detail=f"Archive {stamp} not found")
+
+    # Clean current data dir (except _archive/_default) before applying.
+    _clear_current_dataset()
+
+    # Copy archived contents to current location.
+    for item in candidate.iterdir():
+        dest = WEBAPP_DATA_DIR / item.name
+        if item.is_dir():
+            shutil.copytree(item, dest)
+        else:
+            shutil.copy2(item, dest)
+
+    _STATIONS_CACHE["mtime"] = None
+    _STATIONS_CACHE["by_code"] = None
+    _STATIONS_CACHE["codes_by_region_name"] = None
+    return candidate
 
 
 def _copy_dataset_into_webapp(dataset_root: Path) -> None:
@@ -706,17 +786,28 @@ def get_data_info():
 @app.get("/data/archives")
 def list_archived_datasets():
     """List available archived datasets (newest last)."""
-    archives = _list_archives()
-    return {
-        "archives": [
-            {
-                "stamp": p.name,
-                "path": str(p),
-                "name": (_read_dataset_meta(p / DATASET_META_FILENAME).get("name") or None),
-            }
-            for p in archives
-        ]
-    }
+    archives: List[Dict[str, Any]] = []
+
+    current_entry = _current_dataset_entry()
+    if current_entry:
+        archives.append(current_entry)
+
+    default_entry = _default_archive_entry()
+    if default_entry:
+        archives.append(default_entry)
+
+    archives.extend([
+        {
+            "stamp": p.name,
+            "path": str(p),
+            "name": (_read_dataset_meta(p / DATASET_META_FILENAME).get("name") or None),
+            "is_default": False,
+            "is_current": False,
+        }
+        for p in _list_archives()
+    ])
+
+    return {"archives": archives}
 
 
 @app.post("/data/revert")
@@ -727,6 +818,57 @@ def revert_to_archive(stamp: Optional[str] = Form(None)):
         "status": "ok",
         "restored_from": restored.name,
     }
+
+
+@app.post("/data/apply-archive")
+def apply_archive_dataset(stamp: str = Form(...)):
+    """Apply (load) a specific archived dataset as current without creating a backup.
+    
+    This allows quick switching between datasets without the overhead of 
+    creating a new archive entry.
+    """
+    try:
+        applied = _apply_archive(stamp)
+        meta = _read_dataset_meta(applied / DATASET_META_FILENAME)
+        min_d, max_d = _infer_available_date_range()
+        
+        return {
+            "status": "ok",
+            "applied_from": applied.name,
+            "dataset_name": meta.get("name"),
+            "available_min_date": min_d.isoformat(),
+            "available_max_date": max_d.isoformat(),
+        }
+    except HTTPException as exc:
+        raise exc
+    except Exception as e:
+        print(f"[ERROR] Failed to apply archive: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to apply archive: {str(e)}")
+
+
+@app.post("/data/delete-archive")
+def delete_archive(stamp: str = Form(...)):
+    """Delete a specific archived dataset."""
+    if stamp in {DEFAULT_ARCHIVE_STAMP, CURRENT_ARCHIVE_STAMP}:
+        raise HTTPException(status_code=400, detail="Selected dataset cannot be deleted")
+
+    archive_root = WEBAPP_DATA_DIR / "_archive"
+    archive_path = archive_root / stamp
+    
+    if not archive_path.exists():
+        raise HTTPException(status_code=404, detail=f"Archive {stamp} not found")
+    
+    try:
+        shutil.rmtree(archive_path)
+        print(f"[INFO] Archive {stamp} deleted successfully")
+        return {
+            "status": "ok",
+            "message": f"Archive {stamp} deleted successfully",
+            "deleted_stamp": stamp,
+        }
+    except Exception as e:
+        print(f"[ERROR] Failed to delete archive {stamp}: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to delete archive: {str(e)}")
 
 
 @app.post("/data/clear-archives")
@@ -774,6 +916,7 @@ async def upload_data(
 
     upload_stats = {}
     _ensure_default_dataset()
+    archive_stamp: Optional[str] = None
 
     # Handle "full" mode - both stations and ZIP files
     if mode == "full":
@@ -798,7 +941,9 @@ async def upload_data(
                 _safe_extract_zip(zip_path, extract_root)
                 dataset_root = _find_dataset_root(extract_root)
 
-                _archive_existing_dataset()
+                archived_dir = _archive_existing_dataset()
+                if archived_dir:
+                    archive_stamp = archived_dir.name
                 _copy_dataset_into_webapp(dataset_root)
                 
                 # Compute upload stats from imported data
@@ -817,6 +962,12 @@ async def upload_data(
         if not stations_file and not zip_file:
             raise HTTPException(status_code=400, detail="At least one file (stations or ZIP) required")
 
+        # Clear cache after stations upload (if no zip_file, otherwise _copy_dataset_into_webapp handles it)
+        if stations_file and not zip_file:
+            _STATIONS_CACHE["mtime"] = None
+            _STATIONS_CACHE["by_code"] = None
+            _STATIONS_CACHE["codes_by_region_name"] = None
+
         _write_dataset_meta(WEBAPP_DATA_DIR, dataset_name)
 
         precompute_range = None
@@ -833,6 +984,7 @@ async def upload_data(
                 "end_date": precompute_range[1].isoformat(),
                 "clamped_to_max_range": precompute_range[2],
             } if precompute_range else None,
+            "archived_stamp": archive_stamp,
         }
 
     if mode == "stations":
@@ -844,11 +996,18 @@ async def upload_data(
         stations_path = STATIONS_CSV_PATH
         with open(stations_path, "wb") as out:
             shutil.copyfileobj(file.file, out)
+        
+        # Clear cache after stations file upload
+        _STATIONS_CACHE["mtime"] = None
+        _STATIONS_CACHE["by_code"] = None
+        _STATIONS_CACHE["codes_by_region_name"] = None
+        
         _write_dataset_meta(WEBAPP_DATA_DIR, dataset_name)
         return {
             "status": "ok",
             "precompute": False,
             "precompute_range": None,
+            "archived_stamp": archive_stamp,
         }
 
     if mode == "zip" or (mode == "" and file is not None):
@@ -866,7 +1025,9 @@ async def upload_data(
             _safe_extract_zip(zip_path, extract_root)
             dataset_root = _find_dataset_root(extract_root)
 
-            _archive_existing_dataset()
+            archived_dir = _archive_existing_dataset()
+            if archived_dir:
+                archive_stamp = archived_dir.name
             _copy_dataset_into_webapp(dataset_root)
             _write_dataset_meta(WEBAPP_DATA_DIR, dataset_name)
     else:
@@ -879,7 +1040,9 @@ async def upload_data(
             _write_upload_files(upload_root, files, paths)
             dataset_root = _find_dataset_root(upload_root)
 
-            _archive_existing_dataset()
+            archived_dir = _archive_existing_dataset()
+            if archived_dir:
+                archive_stamp = archived_dir.name
             _copy_dataset_into_webapp(dataset_root)
         _write_dataset_meta(WEBAPP_DATA_DIR, dataset_name)
 
@@ -896,6 +1059,7 @@ async def upload_data(
             "end_date": precompute_range[1].isoformat(),
             "clamped_to_max_range": precompute_range[2],
         } if precompute_range else None,
+        "archived_stamp": archive_stamp,
     }
 
 

@@ -94,6 +94,22 @@ export const apiService = {
     });
   },
 
+  applyArchive: (stamp) => {
+    const form = new FormData();
+    form.append('stamp', stamp);
+    return api.post('/data/apply-archive', form, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    });
+  },
+
+  deleteArchive: (stamp) => {
+    const form = new FormData();
+    form.append('stamp', stamp);
+    return api.post('/data/delete-archive', form, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    });
+  },
+
   clearArchives: () => api.post('/data/clear-archives', {}, {
     headers: { 'Content-Type': 'application/json' },
   }),

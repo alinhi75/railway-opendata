@@ -38,13 +38,15 @@ const Filters = ({ onChange, onDatasetApplied, initialFilters = {} }) => {
   const [uploading, setUploading] = useState(false);
   const [archives, setArchives] = useState([]);
   const [selectedArchive, setSelectedArchive] = useState('');
+  const [archiveSelectionLocked, setArchiveSelectionLocked] = useState(false);
   const [revertStatus, setRevertStatus] = useState(null);
   const [reverting, setReverting] = useState(false);
-  const [datasetChanged, setDatasetChanged] = useState(false);
-  const [applyingDataset, setApplyingDataset] = useState(false);
-  const [clearing, setClearing] = useState(false);
-  const [clearStatus, setClearStatus] = useState(null);
-  const [showClearConfirm, setShowClearConfirm] = useState(false);
+  const [deletingArchive, setDeletingArchive] = useState(false);
+  const [deleteStatus, setDeleteStatus] = useState(null);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [applyingArchive, setApplyingArchive] = useState(false);
+  const [applyArchiveStatus, setApplyArchiveStatus] = useState(null);
+  const [uploadModalOpen, setUploadModalOpen] = useState(false);
 
   const dateRangeError = useMemo(() => {
     const s = (startDate || '').trim();
@@ -85,12 +87,26 @@ const Filters = ({ onChange, onDatasetApplied, initialFilters = {} }) => {
     fetchFiltersMeta();
   }, []);
 
-  const refreshArchives = async () => {
+  const refreshArchives = async ({ preferCurrent } = {}) => {
     try {
       const res = await apiService.listArchives();
-      setArchives(res?.data?.archives || []);
+      const nextArchives = res?.data?.archives || [];
+      setArchives(nextArchives);
+      let nextSelection = selectedArchive;
+      if (preferCurrent) {
+        nextSelection = nextArchives.find((a) => a.is_current)?.stamp || nextSelection;
+      }
+      if (!nextSelection || !nextArchives.some((a) => a.stamp === nextSelection)) {
+        nextSelection = nextArchives[0]?.stamp || '';
+      }
+      setSelectedArchive(nextSelection);
+      const selectionInfo = nextArchives.find((a) => a.stamp === nextSelection);
+      setArchiveSelectionLocked(selectionInfo?.is_current ?? false);
+      return nextArchives;
     } catch (err) {
       console.warn('Could not load archives', err);
+      setArchiveSelectionLocked(false);
+      return [];
     }
   };
 
@@ -110,8 +126,12 @@ const Filters = ({ onChange, onDatasetApplied, initialFilters = {} }) => {
   };
 
   useEffect(() => {
-    refreshArchives();
+    refreshArchives({ preferCurrent: true });
   }, []);
+
+  const selectedArchiveInfo = useMemo(() => (
+    archives.find((a) => a.stamp === selectedArchive)
+  ), [archives, selectedArchive]);
 
   useEffect(() => {
     const q = (stationQuery || '').trim();
@@ -262,14 +282,15 @@ const Filters = ({ onChange, onDatasetApplied, initialFilters = {} }) => {
         ? ` Range: ${range.start_date} → ${range.end_date}${range.clamped_to_max_range ? ' (clamped)' : ''}.`
         : '';
       
-      setUploadStatus({ type: 'success', message: `Upload complete.${extra}` });
+      setUploadStatus({ type: 'success', message: `✅ Dataset applied successfully${extra ? '.' + extra : ''}` });
       setUploadStats(stats);
       setUploadStationsFile(null);
       setUploadZipFile(null);
       setDatasetName('');
-      setDatasetChanged(true);
       await refreshAvailableRange();
-      await refreshArchives();
+      await refreshArchives({ preferCurrent: true });
+      // Trigger map refresh by incrementing dataset version
+      onDatasetApplied?.();
     } catch (err) {
       console.error('Upload failed', err);
       setUploadStatus({ type: 'error', message: 'Upload failed. Check backend logs for details.' });
@@ -278,45 +299,55 @@ const Filters = ({ onChange, onDatasetApplied, initialFilters = {} }) => {
     }
   };
 
-  const applyDataset = async () => {
-    if (applyingDataset) return;
-    setApplyingDataset(true);
+  const closeUploadModal = () => {
+    if (uploading) return;
+    setUploadModalOpen(false);
+  };
+
+  const handleDeleteArchive = () => {
+    if (!selectedArchive || selectedArchiveInfo?.is_default || selectedArchiveInfo?.is_current) return;
+    setShowDeleteConfirm(true);
+  };
+
+  const handleApplyArchive = async (stamp) => {
+    const info = archives.find((a) => a.stamp === stamp);
+    if (applyingArchive || !stamp || info?.is_current) return;
+    setApplyingArchive(true);
+    setApplyArchiveStatus({ type: 'info', message: 'Applying archive...' });
     try {
+      await apiService.applyArchive(stamp);
+      setApplyArchiveStatus({ type: 'success', message: '✓ Archive applied successfully!' });
       await refreshAvailableRange();
-      setDatasetChanged(false);
+      await refreshArchives({ preferCurrent: true });
       onDatasetApplied?.();
-      setUploadStatus({ type: 'success', message: '✓ Dataset applied successfully!' });
-      setTimeout(() => setUploadStatus(null), 3000);
+      setTimeout(() => setApplyArchiveStatus(null), 3000);
     } catch (err) {
-      console.error('Failed to apply dataset', err);
-      setUploadStatus({ type: 'error', message: 'Failed to apply dataset. Check console for details.' });
+      console.error('Apply archive failed', err);
+      setApplyArchiveStatus({ type: 'error', message: 'Failed to apply archive. Check backend logs.' });
     } finally {
-      setApplyingDataset(false);
+      setApplyingArchive(false);
     }
   };
 
-  const handleClearArchives = async () => {
-    setShowClearConfirm(true);
-  };
-
-  const confirmClearArchives = async () => {
-    setShowClearConfirm(false);
+  const confirmDeleteArchive = async () => {
+    setShowDeleteConfirm(false);
     
-    if (clearing) return;
-    setClearing(true);
-    setClearStatus({ type: 'info', message: 'Clearing archives...' });
+    if (deletingArchive || !selectedArchive || selectedArchiveInfo?.is_default || selectedArchiveInfo?.is_current) return;
+    setDeletingArchive(true);
+    setDeleteStatus({ type: 'info', message: 'Deleting archive...' });
 
     try {
-      await apiService.clearArchives();
-      setClearStatus({ type: 'success', message: '✓ Archives cleared successfully!' });
+      await apiService.deleteArchive(selectedArchive);
+      setDeleteStatus({ type: 'success', message: '✓ Archive deleted successfully!' });
       setSelectedArchive('');
-      await refreshArchives();
-      setTimeout(() => setClearStatus(null), 3000);
+      setArchiveSelectionLocked(false);
+      await refreshArchives({ preferCurrent: true });
+      setTimeout(() => setDeleteStatus(null), 3000);
     } catch (err) {
-      console.error('Clear archives failed', err);
-      setClearStatus({ type: 'error', message: 'Failed to clear archives. Check backend logs.' });
+      console.error('Delete archive failed', err);
+      setDeleteStatus({ type: 'error', message: 'Failed to delete archive. Check backend logs.' });
     } finally {
-      setClearing(false);
+      setDeletingArchive(false);
     }
   };
 
@@ -340,15 +371,6 @@ const Filters = ({ onChange, onDatasetApplied, initialFilters = {} }) => {
         </div>
       </div>
 
-      {/* Available Date Range */}
-      {availableDateRange && (
-        <div className="range-banner">
-          <div className="range-text">
-            🗃️ Data available: <strong>{availableDateRange.start}</strong> → <strong>{availableDateRange.end}</strong>
-          </div>
-        </div>
-      )}
-
       <section className="filters-section upload-section">
         <h3>📤 Dataset Management</h3>
         <div className="upload-panel">
@@ -369,11 +391,6 @@ const Filters = ({ onChange, onDatasetApplied, initialFilters = {} }) => {
                   <span className="dataset-info-value">{currentDatasetName}</span>
                 </div>
               )}
-              {datasetChanged && (
-                <div className="dataset-pending-badge">
-                  ⚡ New data ready to apply
-                </div>
-              )}
             </div>
             
             {/* Archive Management */}
@@ -382,19 +399,48 @@ const Filters = ({ onChange, onDatasetApplied, initialFilters = {} }) => {
               <div className="controls-group">
                 <select
                   value={selectedArchive}
-                  onChange={(e) => setSelectedArchive(e.target.value)}
-                  disabled={reverting || archives.length === 0}
+                  onChange={(e) => {
+                    const value = e.target.value;
+                    setSelectedArchive(value);
+                    const info = archives.find((a) => a.stamp === value);
+                    setArchiveSelectionLocked(info?.is_current ?? false);
+                  }}
+                  disabled={reverting || applyingArchive || archives.length === 0}
                   className="archive-select"
                 >
-                  <option value="">
-                    {currentDatasetName ? `Latest (${currentDatasetName})` : 'Latest'}
-                  </option>
-                  {archives.map((a) => (
-                    <option key={a.stamp} value={a.stamp}>
-                      {a.name ? `${a.name} (${a.stamp})` : a.stamp}
-                    </option>
-                  ))}
+                  {archives.map((a) => {
+                    const baseName = a.name || (a.is_default ? 'Bundled dataset' : a.stamp);
+                    const suffix = (!a.is_current && !a.is_default && a.name) ? ` (${a.stamp})` : '';
+                    const prefix = a.is_current
+                      ? '⚡ Current dataset: '
+                      : a.is_default
+                        ? '⭐ Default - '
+                        : '';
+                    return (
+                      <option key={a.stamp} value={a.stamp}>
+                        {prefix}{baseName}{suffix}
+                      </option>
+                    );
+                  })}
                 </select>
+                <button
+                  className="btn btn-success btn-sm"
+                  onClick={async () => {
+                    if (selectedArchive && !applyingArchive && !selectedArchiveInfo?.is_current) {
+                      await handleApplyArchive(selectedArchive);
+                    }
+                  }}
+                  disabled={
+                    applyingArchive ||
+                    !selectedArchive ||
+                    archives.length === 0 ||
+                    archiveSelectionLocked ||
+                    selectedArchiveInfo?.is_current
+                  }
+                  title="Apply the selected archive as current dataset"
+                >
+                  {applyingArchive ? 'Applying...' : '↪️ Apply Archive'}
+                </button>
                 <button
                   className="btn btn-secondary btn-sm"
                   onClick={async () => {
@@ -402,11 +448,12 @@ const Filters = ({ onChange, onDatasetApplied, initialFilters = {} }) => {
                     setRevertStatus({ type: 'info', message: 'Restoring dataset...' });
                     setReverting(true);
                     try {
-                      await apiService.revertArchive(selectedArchive || null);
+                      const targetStamp = selectedArchiveInfo?.is_current ? null : selectedArchive || null;
+                      await apiService.revertArchive(targetStamp);
                       setRevertStatus({ type: 'success', message: 'Restore complete. Refreshing data range.' });
-                      setDatasetChanged(true);
                       await refreshAvailableRange();
-                      await refreshArchives();
+                      await refreshArchives({ preferCurrent: true });
+                      onDatasetApplied?.();
                     } catch (err) {
                       console.error('Restore failed', err);
                       setRevertStatus({ type: 'error', message: 'Restore failed. Check backend logs.' });
@@ -415,28 +462,23 @@ const Filters = ({ onChange, onDatasetApplied, initialFilters = {} }) => {
                     }
                   }}
                   disabled={reverting || archives.length === 0}
-                  title="Restore a previous version of the dataset"
+                  title="Restore with backup (saves current as archive)"
                 >
                   {reverting ? 'Restoring...' : '↩️ Restore'}
                 </button>
                 {archives.length > 0 && (
                   <button
-                    className="btn btn-link btn-sm"
-                    onClick={() => setSelectedArchive(archives[0].stamp)}
-                    disabled={reverting}
-                    title={`Reset to default (${archives[0].stamp})`}
-                  >
-                    Default ({archives[0].name ? `${archives[0].name} (${archives[0].stamp})` : archives[0].stamp})
-                  </button>
-                )}
-                {archives.length > 0 && (
-                  <button
                     className="btn btn-danger btn-sm"
-                    onClick={handleClearArchives}
-                    disabled={clearing}
-                    title="Delete all archived datasets"
+                    onClick={handleDeleteArchive}
+                    disabled={
+                      deletingArchive ||
+                      !selectedArchive ||
+                      selectedArchiveInfo?.is_default ||
+                      selectedArchiveInfo?.is_current
+                    }
+                    title="Delete the selected archive"
                   >
-                    {clearing ? 'Clearing...' : '🗑️ Clear Archives'}
+                    {deletingArchive ? 'Deleting...' : '🗑️ Delete Archive'}
                   </button>
                 )}
               </div>
@@ -446,9 +488,14 @@ const Filters = ({ onChange, onDatasetApplied, initialFilters = {} }) => {
                 {revertStatus.message}
               </div>
             )}
-            {clearStatus && (
-              <div className={`upload-status ${clearStatus.type}`}>
-                {clearStatus.message}
+            {applyArchiveStatus && (
+              <div className={`upload-status ${applyArchiveStatus.type}`}>
+                {applyArchiveStatus.message}
+              </div>
+            )}
+            {deleteStatus && (
+              <div className={`upload-status ${deleteStatus.type}`}>
+                {deleteStatus.message}
               </div>
             )}
           </div>
@@ -458,320 +505,366 @@ const Filters = ({ onChange, onDatasetApplied, initialFilters = {} }) => {
 
           {/* Upload Section */}
           <div className="upload-section-content">
-            <p className="upload-hint">
-              <strong>Upload Instructions:</strong> Add <strong>stations.csv</strong> and/or a <strong>ZIP archive</strong> containing YYYY-MM-DD/trains.csv folders.
-            </p>
-            
-            <div className="upload-form">
-              <div className="upload-input-group">
-                <label className="upload-input-label">
-                  <span className="upload-input-title">🏷️ Dataset name</span>
-                  <span className="upload-input-desc">Shown in archive history</span>
-                  <input
-                    type="text"
-                    value={datasetName}
-                    onChange={(e) => setDatasetName(e.target.value)}
-                    placeholder="e.g., Full dataset 2024-2025"
-                    disabled={uploading}
-                  />
-                </label>
-              </div>
+            {/* <p className="upload-hint">
+              <strong>Upload Instructions:</strong> Add <strong>stations.csv</strong> and/or a <strong>ZIP archive</strong> containing YYYY-MM-DD/trains.csv folders. Use the button below to open the upload workspace.
+            </p> */}
+            <div className="upload-actions">
+              <button
+                className="btn btn-primary btn-large"
+                onClick={() => setUploadModalOpen(true)}
+                title="Open the dataset upload workspace"
+                disabled={uploading}
+              >
+                {uploading ? 'Uploading...' : '⬆️ Open Upload Workspace'}
+              </button>
+            </div>
+          </div>
+        </div>
+      </section>
 
-              <div className="upload-input-group">
-                <label className="upload-input-label">
-                  <span className="upload-input-title">📍 stations.csv</span>
-                  <span className="upload-input-desc">Station reference data (optional if already uploaded)</span>
-                  <input
-                    type="file"
-                    accept=".csv"
-                    onChange={(e) => setUploadStationsFile(e.target.files?.[0] || null)}
-                    disabled={uploading}
-                  />
-                  {uploadStationsFile && (
-                    <div className="upload-input-filename">✓ {uploadStationsFile.name}</div>
-                  )}
-                </label>
+      {uploadModalOpen && (
+        <>
+          <div
+            className="modal-overlay"
+            role="presentation"
+            onClick={closeUploadModal}
+          ></div>
+          <div
+            className="modal-dialog"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="upload-modal-title"
+          >
+            <div className="modal-content upload-modal">
+              <div className="modal-header">
+                <div className="modal-title-icon">📤</div>
+                <div>
+                  <h3 className="modal-title" id="upload-modal-title">Dataset Upload</h3>
+                  <p className="modal-subtitle">Queue new datasets or replace stations directly from here.</p>
+                </div>
               </div>
+              <div className="modal-body">
+                <p>
+                  Upload <strong>stations.csv</strong> and/or a <strong>ZIP archive</strong> with YYYY-MM-DD/trains.csv folders.
+                  The backend archives the current dataset automatically before applying the new one.
+                </p>
+                <div className="modal-warning">
+                  Large uploads may take several minutes. Keep this dialog open to monitor status.
+                </div>
+                <div className="upload-form">
+                  <div className="upload-input-group">
+                    <label className="upload-input-label">
+                      <span className="upload-input-title">🏷️ Dataset name</span>
+                      <span className="upload-input-desc">Shown in archive history</span>
+                      <input
+                        type="text"
+                        value={datasetName}
+                        onChange={(e) => setDatasetName(e.target.value)}
+                        placeholder="e.g., Full dataset 2024-2025"
+                        disabled={uploading}
+                      />
+                    </label>
+                  </div>
 
-              <div className="upload-input-group">
-                <label className="upload-input-label">
-                  <span className="upload-input-title">📦 ZIP Archive</span>
-                  <span className="upload-input-desc">YYYY-MM-DD/trains.csv folders (optional if only updating stations)</span>
-                  <input
-                    type="file"
-                    accept=".zip"
-                    onChange={(e) => setUploadZipFile(e.target.files?.[0] || null)}
-                    disabled={uploading}
-                  />
-                  {uploadZipFile && (
-                    <div className="upload-input-filename">✓ {uploadZipFile.name}</div>
-                  )}
-                </label>
+                  <div className="upload-input-group">
+                    <label className="upload-input-label">
+                      <span className="upload-input-title">📍 stations.csv</span>
+                      <span className="upload-input-desc">Station reference data (optional if already uploaded)</span>
+                      <input
+                        type="file"
+                        accept=".csv"
+                        onChange={(e) => setUploadStationsFile(e.target.files?.[0] || null)}
+                        disabled={uploading}
+                      />
+                      {uploadStationsFile && (
+                        <div className="upload-input-filename">✓ {uploadStationsFile.name}</div>
+                      )}
+                    </label>
+                  </div>
+
+                  <div className="upload-input-group">
+                    <label className="upload-input-label">
+                      <span className="upload-input-title">📦 ZIP Archive</span>
+                      <span className="upload-input-desc">YYYY-MM-DD/trains.csv folders (optional if only updating stations)</span>
+                      <input
+                        type="file"
+                        accept=".zip"
+                        onChange={(e) => setUploadZipFile(e.target.files?.[0] || null)}
+                        disabled={uploading}
+                      />
+                      {uploadZipFile && (
+                        <div className="upload-input-filename">✓ {uploadZipFile.name}</div>
+                      )}
+                    </label>
+                  </div>
+                </div>
+
+                {uploadStatus && (
+                  <div className={`upload-status ${uploadStatus.type}`}>
+                    {uploadStatus.message}
+                  </div>
+                )}
+
+                {uploadStats && Object.keys(uploadStats).length > 0 && (
+                  <div className="upload-stats">
+                    <div className="stats-title">📊 Upload Summary</div>
+                    {uploadStats.stations_uploaded && (
+                      <div className="stat-item">
+                        <span className="stat-label">Stations file:</span>
+                        <span className="stat-value">✓ Uploaded</span>
+                      </div>
+                    )}
+                    {uploadStats.train_dates && uploadStats.train_dates.length > 0 && (
+                      <div className="stat-item">
+                        <span className="stat-label">Train data dates:</span>
+                        <span className="stat-value">{uploadStats.train_dates.length} folders</span>
+                      </div>
+                    )}
+                    {uploadStats.date_range && (
+                      <div className="stat-item">
+                        <span className="stat-label">Date range:</span>
+                        <span className="stat-value">{uploadStats.date_range.start} to {uploadStats.date_range.end}</span>
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
-
-              <div className="upload-actions">
+              <div className="modal-footer">
                 <button
-                  className="btn btn-primary btn-large"
+                  className="btn btn-secondary"
+                  onClick={closeUploadModal}
+                  disabled={uploading}
+                >
+                  Close
+                </button>
+                <button
+                  className="btn btn-primary"
                   onClick={handleUpload}
                   disabled={uploading || (!uploadStationsFile && !uploadZipFile)}
-                  title="Upload new dataset files"
                 >
                   {uploading ? 'Uploading...' : '⬆️ Upload Dataset'}
                 </button>
-                
-                {datasetChanged && (
-                  <button
-                    className="btn btn-success btn-large"
-                    onClick={applyDataset}
-                    disabled={applyingDataset}
-                    title="Apply the new dataset to the application"
-                  >
-                    {applyingDataset ? 'Applying...' : '✓ Apply Dataset'}
-                  </button>
-                )}
               </div>
             </div>
-
-            {uploadStatus && (
-              <div className={`upload-status ${uploadStatus.type}`}>
-                {uploadStatus.message}
-              </div>
-            )}
-
-            {uploadStats && Object.keys(uploadStats).length > 0 && (
-              <div className="upload-stats">
-                <div className="stats-title">📊 Upload Summary</div>
-                {uploadStats.stations_uploaded && (
-                  <div className="stat-item">
-                    <span className="stat-label">Stations file:</span>
-                    <span className="stat-value">✓ Uploaded</span>
-                  </div>
-                )}
-                {uploadStats.train_dates && uploadStats.train_dates.length > 0 && (
-                <div className="stat-item">
-                  <span className="stat-label">Train data dates:</span>
-                  <span className="stat-value">{uploadStats.train_dates.length} folders</span>
-                </div>
-              )}
-              {uploadStats.date_range && (
-                <div className="stat-item">
-                  <span className="stat-label">Date range:</span>
-                  <span className="stat-value">{uploadStats.date_range.start} to {uploadStats.date_range.end}</span>
-                </div>
-              )}
-            </div>
-          )}
           </div>
-        </div>
-      </section>
-
-      {activeFilterCount > 0 && (
-        <div className="active-filters-summary">
-          <strong>Active Filters:</strong>
-          {companies.length > 0 && (
-            <span className="filter-tag">
-              🏢 {companies.length} {companies.length === 1 ? 'company' : 'companies'}
-            </span>
-          )}
-          {regions.length > 0 && (
-            <span className="filter-tag">
-              🗺️ {regions.length} {regions.length === 1 ? 'region' : 'regions'}
-            </span>
-          )}
-          {selectedStations.length > 0 && (
-            <span className="filter-tag">
-              🚉 {selectedStations.length} {selectedStations.length === 1 ? 'station' : 'stations'}
-            </span>
-          )}
-        </div>
+        </>
       )}
 
-      {/* Station Search */}
-      {/* Date Range */}
       <section className="filters-section">
-        <h3>📅 Date Range</h3>
-        <div className="date-grid">
-          <div className="date-input">
-            <label>Start date</label>
-            <input
-              type="date"
-              value={startDate}
-              min={availableDateRange?.start || undefined}
-              max={endDate || availableDateRange?.end || undefined}
-              onChange={(e) => setStartDate(e.target.value)}
-            />
-          </div>
-          <div className="date-input">
-            <label>End date</label>
-            <input
-              type="date"
-              value={endDate}
-              min={startDate || availableDateRange?.start || undefined}
-              max={availableDateRange?.end || undefined}
-              onChange={(e) => setEndDate(e.target.value)}
-            />
-          </div>
-        </div>
-
-        {dateRangeError && (
-          <div className="range-hint" style={{ marginTop: 8 }}>
-            ⚠️ {dateRangeError}
-          </div>
-        )}
-      </section>
-
-      {/* Station Search */}
-      <section className="filters-section">
-        <h3>🚉 Station</h3>
-        <div className="station-search">
-          {/* Selected stations as chips */}
-          <div className="selected-stations-chips">
-            {selectedStations.map((s) => (
-              <span className="station-chip" key={s.code}>
-                {s.name}
-                {s.regionName ? <span className="station-region"> — {s.regionName}</span> : null}
-                {s.code && <span className="station-code">{s.code}</span>}
-                <button className="remove-chip" onClick={() => removeSelectedStation(s.code)} title="Remove">×</button>
-              </span>
-            ))}
-          </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-            <input
-              type="text"
-              placeholder="Type station name (e.g., Milano Centrale)"
-              value={stationQuery}
-              onChange={(e) => {
-                setStationQuery(e.target.value);
-                setDropdownOpen(true);
-              }}
-              autoComplete="off"
-              onFocus={() => setDropdownOpen(true)}
-              onBlur={() => setTimeout(() => {
-                if (!mouseOverSuggestions && !mouseDownOnSuggestions.current) setDropdownOpen(false);
-              }, 150)}
-              style={{ flex: 1 }}
-            />
-            {stationQuery && (
-              <button
-                className="remove-chip"
-                style={{ fontSize: 18, marginLeft: 0, marginRight: 2, padding: '0 6px' }}
-                onClick={() => setStationQuery('')}
-                title="Clear search"
-                tabIndex={-1}
-              >×</button>
-            )}
-          </div>
-          {(dropdownOpen && (stationLoading || stationSuggestions.length > 0)) && (
-            <div
-              className="station-suggestions improved-scroll"
-              onMouseEnter={() => setMouseOverSuggestions(true)}
-              onMouseLeave={() => setMouseOverSuggestions(false)}
-              onMouseDown={() => { mouseDownOnSuggestions.current = true; }}
-              onMouseUp={() => { setTimeout(() => { mouseDownOnSuggestions.current = false; }, 0); }}
-            >
-              {stationLoading && (
-                <div className="station-suggestion muted">Searching…</div>
+        <div className="filters-main-panel">
+          {activeFilterCount > 0 && (
+            <div className="active-filters-summary">
+              <strong>Active Filters:</strong>
+              {companies.length > 0 && (
+                <span className="filter-tag">
+                  🏢 {companies.length} {companies.length === 1 ? 'company' : 'companies'}
+                </span>
               )}
-              {!stationLoading && stationSuggestions.length === 0 && (
-                <div className="station-suggestion muted">No matches</div>
+              {regions.length > 0 && (
+                <span className="filter-tag">
+                  🗺️ {regions.length} {regions.length === 1 ? 'region' : 'regions'}
+                </span>
               )}
-              {!stationLoading && stationSuggestions.map((s) => {
-                const isSelected = selectedStations.some(sel => sel.code === s.code);
-                return (
-                  <label
-                    key={`${s.code || ''}-${s.name}-${s.region || ''}-${s.regionName || ''}`}
-                    className={`station-suggestion${isSelected ? ' selected' : ''}`}
-                    style={{ cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 8 }}
-                    onMouseDown={e => e.preventDefault()}
-                  >
-                    <input
-                      type="checkbox"
-                      checked={isSelected}
-                      onChange={() => {
-                        if (isSelected) {
-                          removeSelectedStation(s.code);
-                        } else {
-                          selectStation(s);
-                        }
-                      }}
-                      style={{ marginRight: 8 }}
-                      tabIndex={-1}
-                    />
-                    <span className="station-name"><b>{s.name}</b></span>
-                    {s.regionName ? <span className="station-region"> — {s.regionName}</span> : null}
-                    {s.code && <span className="station-code">{s.code}</span>}
-                  </label>
-                );
-              })}
+              {selectedStations.length > 0 && (
+                <span className="filter-tag">
+                  🚉 {selectedStations.length} {selectedStations.length === 1 ? 'station' : 'stations'}
+                </span>
+              )}
             </div>
           )}
+
+          {/* Date Range */}
+          <div className="filters-subsection">
+            <h3>📅 Date Range</h3>
+            <div className="date-grid">
+              <div className="date-input">
+                <label>Start date</label>
+                <input
+                  type="date"
+                  value={startDate}
+                  min={availableDateRange?.start || undefined}
+                  max={endDate || availableDateRange?.end || undefined}
+                  onChange={(e) => setStartDate(e.target.value)}
+                />
+              </div>
+              <div className="date-input">
+                <label>End date</label>
+                <input
+                  type="date"
+                  value={endDate}
+                  min={startDate || availableDateRange?.start || undefined}
+                  max={availableDateRange?.end || undefined}
+                  onChange={(e) => setEndDate(e.target.value)}
+                />
+              </div>
+            </div>
+
+            {dateRangeError && (
+              <div className="range-hint" style={{ marginTop: 8 }}>
+                ⚠️ {dateRangeError}
+              </div>
+            )}
+          </div>
+
+          {/* Station Search */}
+          <div className="filters-subsection">
+            <h3>🚉 Station</h3>
+            <div className="station-search">
+              {/* Selected stations as chips */}
+              <div className="selected-stations-chips">
+                {selectedStations.map((s) => (
+                  <span className="station-chip" key={s.code}>
+                    {s.name}
+                    {s.regionName ? <span className="station-region"> — {s.regionName}</span> : null}
+                    {s.code && <span className="station-code">{s.code}</span>}
+                    <button className="remove-chip" onClick={() => removeSelectedStation(s.code)} title="Remove">×</button>
+                  </span>
+                ))}
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                <input
+                  type="text"
+                  placeholder="Type station name (e.g., Milano Centrale)"
+                  value={stationQuery}
+                  onChange={(e) => {
+                    setStationQuery(e.target.value);
+                    setDropdownOpen(true);
+                  }}
+                  autoComplete="off"
+                  onFocus={() => setDropdownOpen(true)}
+                  onBlur={() => setTimeout(() => {
+                    if (!mouseOverSuggestions && !mouseDownOnSuggestions.current) setDropdownOpen(false);
+                  }, 150)}
+                  style={{ flex: 1 }}
+                />
+                {stationQuery && (
+                  <button
+                    className="remove-chip"
+                    style={{ fontSize: 18, marginLeft: 0, marginRight: 2, padding: '0 6px' }}
+                    onClick={() => setStationQuery('')}
+                    title="Clear search"
+                    tabIndex={-1}
+                  >×</button>
+                )}
+              </div>
+              {(dropdownOpen && (stationLoading || stationSuggestions.length > 0)) && (
+                <div
+                  className="station-suggestions improved-scroll"
+                  onMouseEnter={() => setMouseOverSuggestions(true)}
+                  onMouseLeave={() => setMouseOverSuggestions(false)}
+                  onMouseDown={() => { mouseDownOnSuggestions.current = true; }}
+                  onMouseUp={() => { setTimeout(() => { mouseDownOnSuggestions.current = false; }, 0); }}
+                >
+                  {stationLoading && (
+                    <div className="station-suggestion muted">Searching…</div>
+                  )}
+                  {!stationLoading && stationSuggestions.length === 0 && (
+                    <div className="station-suggestion muted">No matches</div>
+                  )}
+                  {!stationLoading && stationSuggestions.map((s) => {
+                    const isSelected = selectedStations.some(sel => sel.code === s.code);
+                    return (
+                      <label
+                        key={`${s.code || ''}-${s.name}-${s.region || ''}-${s.regionName || ''}`}
+                        className={`station-suggestion${isSelected ? ' selected' : ''}`}
+                        style={{ cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 8 }}
+                        onMouseDown={e => e.preventDefault()}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={isSelected}
+                          onChange={() => {
+                            if (isSelected) {
+                              removeSelectedStation(s.code);
+                            } else {
+                              selectStation(s);
+                            }
+                          }}
+                          style={{ marginRight: 8 }}
+                          tabIndex={-1}
+                        />
+                        <span className="station-name"><b>{s.name}</b></span>
+                        {s.regionName ? <span className="station-region"> — {s.regionName}</span> : null}
+                        {s.code && <span className="station-code">{s.code}</span>}
+                      </label>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Companies */}
+          <div className="filters-subsection">
+            <h3>🏢 Companies</h3>
+            <div className="chip-grid">
+              {availableCompanies.map((c) => (
+                <button
+                  key={c.code}
+                  onClick={() => toggleCompany(c.code)}
+                  className={`chip ${
+                    c.code === 'ALL' ? (companies.length === 0 ? 'selected' : '') : companies.includes(c.code) ? 'selected' : ''
+                  }`}
+                >
+                  {c.label}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Regions */}
+          <div className="filters-subsection">
+            <h3>🗺️ Regions</h3>
+            <div className="chip-grid">
+              {availableRegions.map((r) => (
+                <button
+                  key={r}
+                  onClick={() => toggleRegion(r)}
+                  className={`chip ${regions.includes(r) ? 'selected' : ''}`}
+                >
+                  {r}
+                </button>
+              ))}
+            </div>
+          </div>
         </div>
       </section>
 
-      {/* Companies */}
-      <section className="filters-section">
-        <h3>🏢 Companies</h3>
-        <div className="chip-grid">
-          {availableCompanies.map((c) => (
-            <button
-              key={c.code}
-              onClick={() => toggleCompany(c.code)}
-              className={`chip ${
-                c.code === 'ALL' ? (companies.length === 0 ? 'selected' : '') : companies.includes(c.code) ? 'selected' : ''
-              }`}
-            >
-              {c.label}
-            </button>
-          ))}
-        </div>
-      </section>
-
-      {/* Regions */}
-      <section className="filters-section">
-        <h3>🗺️ Regions</h3>
-        <div className="chip-grid">
-          {availableRegions.map((r) => (
-            <button
-              key={r}
-              onClick={() => toggleRegion(r)}
-              className={`chip ${regions.includes(r) ? 'selected' : ''}`}
-            >
-              {r}
-            </button>
-          ))}
-        </div>
-      </section>
-
-      {/* Clear Archives Confirmation Modal */}
-      {showClearConfirm && (
+      {/* Delete Archive Confirmation Modal */}
+      {showDeleteConfirm && (
         <>
-          <div className="modal-overlay" onClick={() => setShowClearConfirm(false)}></div>
+          <div className="modal-overlay" onClick={() => setShowDeleteConfirm(false)}></div>
           <div className="modal-dialog clear-confirm-modal">
             <div className="modal-content">
               <div className="modal-header">
                 <div className="modal-title-icon">⚠️</div>
-                <h2 className="modal-title">Clear All Archives?</h2>
+                <h2 className="modal-title">Delete Archive?</h2>
               </div>
               
               <div className="modal-body">
-                <p>This will <strong>permanently delete</strong> all archived datasets.</p>
+                <p>This will <strong>permanently delete</strong> the selected archive.</p>
                 <p className="modal-warning">This action <strong>cannot be undone</strong>.</p>
+                {selectedArchive && (
+                  <div className="modal-archive-info">
+                    <strong>Archive:</strong> {selectedArchive}
+                  </div>
+                )}
               </div>
 
               <div className="modal-footer">
                 <button
                   className="btn btn-secondary"
-                  onClick={() => setShowClearConfirm(false)}
-                  disabled={clearing}
+                  onClick={() => setShowDeleteConfirm(false)}
+                  disabled={deletingArchive}
                 >
                   Cancel
                 </button>
                 <button
                   className="btn btn-danger"
-                  onClick={confirmClearArchives}
-                  disabled={clearing}
+                  onClick={confirmDeleteArchive}
+                  disabled={deletingArchive}
                 >
-                  {clearing ? 'Clearing...' : 'Delete Archives'}
+                  {deletingArchive ? 'Deleting...' : 'Delete Archive'}
                 </button>
               </div>
             </div>
