@@ -566,6 +566,74 @@
   width: 100%;
 }
 
+.relation-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  column-gap: 24px;
+  row-gap: 10px;
+  margin-bottom: 8px;
+  width: 100%;
+}
+
+.relation-hint {
+  margin: 0 0 10px 0;
+  font-size: 12.5px;
+  color: #6b7280;
+  background: #f8fafc;
+  border: 1px dashed #e2e8f0;
+  padding: 8px 10px;
+  border-radius: 8px;
+}
+
+.relation-input label {
+  display: block;
+  font-size: 12px;
+  color: #6b7280;
+  margin-bottom: 4px;
+}
+
+.relation-input input {
+  width: 100%;
+  padding: 5px 9px;
+  height: 32px;
+  border: 1px solid #e5e7eb;
+  border-radius: 6px;
+  font-size: 12.5px;
+  outline: none;
+  background: white;
+  color: #111827;
+}
+
+.relation-input input:focus {
+  border-color: #667eea;
+  box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.15);
+}
+
+.relation-search {
+  position: relative;
+  width: 100%;
+}
+
+.relation-search .station-suggestions {
+  top: calc(100% + 6px);
+  z-index: 30;
+}
+
+.relation-suggestion {
+  justify-content: flex-start;
+}
+
+.relation-actions {
+  display: flex;
+  justify-content: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.relation-cta {
+  min-width: 180px;
+}
+
 .date-input label {
   display: block;
   font-size: 12px;
@@ -649,8 +717,96 @@
 }
 
 .station-search input::placeholder,
-.date-input input::placeholder {
+.date-input input::placeholder,
+.relation-input input::placeholder {
   color: #9ca3af;
+}
+
+.relation-modal {
+  max-width: 520px;
+}
+
+.relation-modal-summary {
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  padding: 12px;
+  display: grid;
+  gap: 10px;
+}
+
+.relation-modal-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  font-size: 13px;
+}
+
+.relation-modal-label {
+  color: #64748b;
+  font-weight: 600;
+}
+
+.relation-modal-value {
+  color: #111827;
+  font-weight: 600;
+}
+
+.relation-modal-note {
+  margin-top: 12px;
+  font-size: 12.5px;
+  color: #6b7280;
+  background: #eef2ff;
+  border: 1px solid #c7d2fe;
+  border-radius: 8px;
+  padding: 8px 10px;
+}
+
+.relation-modal-error {
+  background: #fef2f2;
+  border-color: #fecaca;
+  color: #b91c1c;
+}
+
+.relation-modal-body {
+  margin-top: 12px;
+}
+
+.relation-table-wrap {
+  width: 100%;
+  overflow-x: auto;
+  border: 1px solid #e5e7eb;
+  border-radius: 10px;
+  background: white;
+}
+
+.relation-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12.5px;
+  min-width: 760px;
+}
+
+.relation-table thead th {
+  text-align: left;
+  background: #f8fafc;
+  color: #475569;
+  font-weight: 700;
+  padding: 10px 12px;
+  border-bottom: 1px solid #e5e7eb;
+  white-space: nowrap;
+}
+
+.relation-table tbody td {
+  padding: 10px 12px;
+  border-bottom: 1px solid #f1f5f9;
+  color: #111827;
+  white-space: nowrap;
+}
+
+.relation-table tbody tr:nth-child(even) {
+  background: #f9fafb;
 }
 
 .station-search input:focus {

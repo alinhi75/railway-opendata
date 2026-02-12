@@ -62,6 +62,21 @@ export const apiService = {
    */
   getExternalStationStats: (stationCode) => api.get(`/stats/external-station/${stationCode}`),
 
+  /**
+   * Get external relation data between two stations from TrainStats
+   */
+  getExternalRelation: (departure, destination) => api.get('/stats/external-relation', {
+    params: { stazpart: departure, stazarr: destination },
+  }),
+
+  getExternalRelationStations: () => api.get('/stats/external-relation-stations'),
+
+  getExternalRelationOrigins: () => api.get('/stats/external-relation-origins'),
+
+  getExternalRelationDestinations: (origin) => api.get('/stats/external-relation-destinations', {
+    params: { staz: origin },
+  }),
+
   // ===== MAP ENDPOINTS (US-4) =====
 
   /**

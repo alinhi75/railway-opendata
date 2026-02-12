@@ -33,6 +33,20 @@ const StatisticsSection = ({ filters = {}, datasetVersion = 0 }) => {
     ? filters.stationCodes[0]
     : filters.stationCode || null;
 
+  const isStationSpecificAnalysis = viewMode === 'custom' && Boolean(selectedStationCode);
+  const stationLabel =
+    (stationDetails?.properties?.name ||
+      stationDetails?.properties?.long_name ||
+      stationDetails?.properties?.longName ||
+      stationDetails?.properties?.short_name ||
+      stationDetails?.properties?.shortName ||
+      selectedStationCode ||
+      null);
+
+  const stationNoDataMessage = stationLabel
+    ? `Not enough data to analyze ${stationLabel}.`
+    : 'Not enough data to analyze this station.';
+
   const clearStationSelection = () => {
     try {
       const url = new URL(window.location.href);
@@ -451,7 +465,7 @@ const StatisticsSection = ({ filters = {}, datasetVersion = 0 }) => {
               ) : (
                 <div className="stat-placeholder">
                   <span className="placeholder-icon">📭</span>
-                  <p>No boxplot available for selected filters.</p>
+                  <p>{isStationSpecificAnalysis ? stationNoDataMessage : 'No boxplot available for selected filters.'}</p>
                 </div>
               )}
             </div>
@@ -473,7 +487,7 @@ const StatisticsSection = ({ filters = {}, datasetVersion = 0 }) => {
               ) : (
                 <div className="stat-placeholder">
                   <span className="placeholder-icon">📭</span>
-                  <p>No train count available for selected filters.</p>
+                  <p>{isStationSpecificAnalysis ? stationNoDataMessage : 'No train count available for selected filters.'}</p>
                 </div>
               )}
             </div>

@@ -91,6 +91,7 @@ MAX_RANGE_DAYS = 366
 
 # In-memory cache for station index (to support region/station filtering).
 _STATIONS_CACHE: Dict[str, Any] = {"mtime": None, "by_code": None, "codes_by_region_name": None}
+_TRAINSTATS_STATION_CACHE: Dict[str, Any] = {"ts": None, "by_norm": None, "list": None}
 
 
 def _read_csv_rows(path: Path) -> Iterable[Dict[str, str]]:
@@ -1921,6 +1922,494 @@ def get_external_station_stats(station_code: str, date: Optional[str] = None):
             status_code=500,
             detail=f"Error fetching external station stats: {str(e)}"
         )
+
+
+@app.get("/stats/external-relation")
+def get_external_relation(
+    stazpart: Optional[str] = None,
+    stazarr: Optional[str] = None,
+    departure: Optional[str] = None,
+    destination: Optional[str] = None,
+    debug: int = 0,
+):
+    """
+    Fetch relation data between two stations from TrainStats.
+    Accepts query params compatible with TrainStats: stazpart, stazarr.
+    """
+    from_station = (departure or stazpart or "").strip()
+    to_station = (destination or stazarr or "").strip()
+
+    if not from_station or not to_station:
+        raise HTTPException(status_code=400, detail="Both departure and destination are required")
+
+    try:
+        import requests
+        from bs4 import BeautifulSoup
+
+        url = "https://trainstats.altervista.org/cercarelazione.php"
+        headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+            "Accept-Language": "it-IT,it;q=0.9,en;q=0.8",
+            "Cache-Control": "no-cache",
+            "Pragma": "no-cache",
+            "Referer": "https://trainstats.altervista.org/cercarelazione.php",
+        }
+
+        def _abbrev_station_name(value: str) -> List[str]:
+            import re
+
+            name = (value or "").strip().upper()
+            if not name:
+                return []
+            name = name.replace("PORTA ", "P.")
+            name = name.replace("SANTA ", "S.")
+            name = name.replace("SAN ", "S.")
+            name = name.replace("SANT'", "S.")
+            name = " ".join(name.split())
+
+            condensed = re.sub(r"\b([A-Z])\.\s+", r"\1.", name)
+
+            variants = [name, condensed]
+            extra = name.replace("PORTA NUOVA", "P.NUOVA")
+            if extra != name:
+                variants.append(extra)
+            extra_condensed = condensed.replace("PORTA NUOVA", "P.NUOVA")
+            if extra_condensed != condensed:
+                variants.append(extra_condensed)
+            return variants
+
+        def _normalize_station_key(value: str) -> str:
+            import re
+            import unicodedata
+
+            text = (value or "").strip().upper()
+            if not text:
+                return ""
+            text = unicodedata.normalize("NFKD", text)
+            text = "".join([c for c in text if not unicodedata.combining(c)])
+            text = text.replace("'", " ")
+            text = re.sub(r"[^A-Z0-9\.\s]", " ", text)
+            text = re.sub(r"\s+", " ", text).strip()
+            return text
+
+        def _load_trainstats_station_map() -> Dict[str, str]:
+            import time
+            import re
+
+            cache = _TRAINSTATS_STATION_CACHE
+            now = time.time()
+            if cache.get("ts") and cache.get("by_norm") and (now - cache["ts"]) < 21600:
+                return cache["by_norm"]
+
+            try:
+                script_url = "https://trainstats.altervista.org/script/scriptCercaRelazioni.js?v=2"
+                resp = requests.get(script_url, headers=headers, timeout=10)
+                if resp.status_code != 200:
+                    return cache.get("by_norm") or {}
+                resp.encoding = "utf-8"
+                by_norm: Dict[str, str] = {}
+                raw_list = resp.text
+                array_match = re.search(r"var\s+value\s*=\s*\[(.*?)\];", raw_list, flags=re.S)
+                array_blob = array_match.group(1) if array_match else raw_list
+                matches = re.findall(r'"([^"]+)"', array_blob)
+                for raw in matches:
+                    raw = (raw or "").strip()
+                    if not raw:
+                        continue
+                    key = _normalize_station_key(raw)
+                    if key and key not in by_norm:
+                        by_norm[key] = raw
+                    key_no_dot = key.replace(".", "")
+                    if key_no_dot and key_no_dot not in by_norm:
+                        by_norm[key_no_dot] = raw
+                cache["ts"] = now
+                cache["by_norm"] = by_norm
+                return by_norm
+            except Exception:
+                return cache.get("by_norm") or {}
+
+        def _map_to_trainstats_name(value: str) -> Optional[str]:
+            by_norm = _load_trainstats_station_map()
+            if not by_norm:
+                return None
+            key = _normalize_station_key(value)
+            if not key:
+                return None
+            if key in by_norm:
+                return by_norm[key]
+            key_no_dot = key.replace(".", "")
+            if key_no_dot in by_norm:
+                return by_norm[key_no_dot]
+            for cand_key, cand_value in by_norm.items():
+                if key in cand_key or cand_key in key:
+                    return cand_value
+            return None
+
+        def _station_name_candidates(value: str) -> List[str]:
+            import re
+
+            base = (value or "").strip()
+            if not base:
+                return []
+
+            base = re.sub(r"\s*\([^)]*\)\s*$", "", base).strip()
+
+            candidates = [base, base.upper()]
+
+            mapped = _map_to_trainstats_name(base)
+            if mapped:
+                candidates.insert(0, mapped)
+
+            try:
+                stations_index = _load_stations_index()
+                by_code = stations_index.get("by_code") or {}
+                needle = base.strip().lower()
+                for code, meta in by_code.items():
+                    name = str(meta.get("name") or "")
+                    short_name = str(meta.get("short_name") or "")
+                    if needle == code.lower() or needle == name.lower() or needle == short_name.lower():
+                        if name:
+                            candidates.append(name)
+                        if short_name:
+                            candidates.append(short_name)
+                        break
+            except Exception:
+                pass
+
+            for abbrev in _abbrev_station_name(base):
+                candidates.append(abbrev)
+
+            uniq = []
+            seen = set()
+            for c in candidates:
+                if not c:
+                    continue
+                key = c.strip().lower()
+                if key in seen:
+                    continue
+                seen.add(key)
+                uniq.append(c)
+            return uniq
+
+        def _parse_relation_html(html: str) -> List[Dict[str, Any]]:
+            import re
+
+            if "Fatal error" in html:
+                return []
+
+            def _normalize_cells(cells: List[str]) -> List[str]:
+                category_codes = {"FR", "REG", "IC", "NCL", "EC", "EN", "ES", "FA", "FB"}
+                if not cells:
+                    return []
+                lower_cells = " ".join([c for c in cells if c]).lower()
+                if any(k in lower_cells for k in ["categoria", "n. treno", "stazione partenza", "stazione arrivo", "arrivo prog", "partenza prog"]):
+                    return []
+                if cells and cells[0] == "" and len(cells) > 1:
+                    cells = cells[1:]
+                if len(cells) > 1 and cells[0] not in category_codes and cells[1] in category_codes:
+                    cells = cells[1:]
+                return cells
+
+            results = []
+
+            try:
+                soup = BeautifulSoup(html, "html.parser")
+                tables = soup.find_all("table")
+                for table in tables:
+                    rows = table.find_all("tr")
+                    for row in rows:
+                        raw_cells = [c.get_text(strip=True) for c in row.find_all(["td", "th"])]
+                        cells = [c for c in raw_cells if c is not None]
+                        cells = _normalize_cells(cells)
+                        if len(cells) < 6:
+                            continue
+                        results.append(cells)
+            except Exception:
+                results = []
+
+            if results:
+                parsed = []
+                for cells in results:
+                    item = {
+                        "category": cells[0],
+                        "train_number": cells[1] if len(cells) > 1 else None,
+                        "origin": cells[2] if len(cells) > 2 else None,
+                        "origin_time": cells[3] if len(cells) > 3 else None,
+                        "origin_delay": cells[4] if len(cells) > 4 else None,
+                        "destination": cells[5] if len(cells) > 5 else None,
+                        "destination_time": cells[6] if len(cells) > 6 else None,
+                        "destination_delay": cells[7] if len(cells) > 7 else None,
+                        "track": cells[8] if len(cells) > 8 else None,
+                        "date": cells[9] if len(cells) > 9 else None,
+                        "raw": cells,
+                    }
+                    parsed.append(item)
+                return parsed
+
+            row_html = re.findall(r"<tr[^>]*>.*?</tr>", html, flags=re.S | re.I)
+            for raw_row in row_html:
+                cell_html = re.findall(r"<t[dh][^>]*>(.*?)</t[dh]>", raw_row, flags=re.S | re.I)
+                if not cell_html:
+                    continue
+                cells = []
+                for cell in cell_html:
+                    cleaned = re.sub(r"<[^>]+>", "", cell)
+                    cleaned = re.sub(r"\s+", " ", cleaned).strip()
+                    cells.append(cleaned)
+                cells = _normalize_cells(cells)
+                if len(cells) < 6:
+                    continue
+                item = {
+                    "category": cells[0],
+                    "train_number": cells[1] if len(cells) > 1 else None,
+                    "origin": cells[2] if len(cells) > 2 else None,
+                    "origin_time": cells[3] if len(cells) > 3 else None,
+                    "origin_delay": cells[4] if len(cells) > 4 else None,
+                    "destination": cells[5] if len(cells) > 5 else None,
+                    "destination_time": cells[6] if len(cells) > 6 else None,
+                    "destination_delay": cells[7] if len(cells) > 7 else None,
+                    "track": cells[8] if len(cells) > 8 else None,
+                    "date": cells[9] if len(cells) > 9 else None,
+                    "raw": cells,
+                }
+                results.append(item)
+            if results:
+                return results
+
+            row_html = re.findall(r"<tr[^>]*>.*?</tr>", html, flags=re.S | re.I)
+            for raw_row in row_html:
+                cell_html = re.findall(r"<td[^>]*>(.*?)</td>", raw_row, flags=re.S | re.I)
+                if not cell_html:
+                    continue
+                cells = []
+                for cell in cell_html:
+                    cleaned = re.sub(r"<[^>]+>", "", cell)
+                    cleaned = re.sub(r"\s+", " ", cleaned).strip()
+                    cells.append(cleaned)
+                cells = _normalize_cells(cells)
+                if len(cells) < 6:
+                    continue
+                item = {
+                    "category": cells[0],
+                    "train_number": cells[1] if len(cells) > 1 else None,
+                    "origin": cells[2] if len(cells) > 2 else None,
+                    "origin_time": cells[3] if len(cells) > 3 else None,
+                    "origin_delay": cells[4] if len(cells) > 4 else None,
+                    "destination": cells[5] if len(cells) > 5 else None,
+                    "destination_time": cells[6] if len(cells) > 6 else None,
+                    "destination_delay": cells[7] if len(cells) > 7 else None,
+                    "track": cells[8] if len(cells) > 8 else None,
+                    "date": cells[9] if len(cells) > 9 else None,
+                    "raw": cells,
+                }
+                results.append(item)
+            return results
+
+        def _fetch_relation_destinations(origin_name: str) -> List[str]:
+            try:
+                rel_url = "https://trainstats.altervista.org/libs/getRelazioniByCodStazione.php"
+                query_url = f"{rel_url}?staz={quote(origin_name.upper())}"
+                resp = session.get(query_url, timeout=10)
+                if resp.status_code != 200:
+                    return []
+                text = (resp.text or "").strip()
+                if len(text) <= 1:
+                    return []
+                parts = [p.strip() for p in text.split(";") if p and p.strip()]
+                return parts
+            except Exception:
+                return []
+
+        def _match_destination(dest_value: str, dest_list: List[str]) -> List[str]:
+            key = _normalize_station_key(dest_value)
+            key_no_dot = key.replace(".", "")
+            matches = []
+            for dest in dest_list:
+                d_key = _normalize_station_key(dest)
+                d_key_no_dot = d_key.replace(".", "")
+                if not d_key:
+                    continue
+                if key == d_key or key_no_dot == d_key_no_dot:
+                    matches.append(dest)
+                    continue
+            if matches:
+                return matches
+            for dest in dest_list:
+                d_key = _normalize_station_key(dest)
+                if key and d_key and (key in d_key or d_key in key):
+                    matches.append(dest)
+            return matches
+
+        from_candidates = _station_name_candidates(from_station)
+        to_candidates = _station_name_candidates(to_station)
+        if not from_candidates:
+            from_candidates = [from_station]
+        if not to_candidates:
+            to_candidates = [to_station]
+
+        last_html = None
+        from urllib.parse import quote
+
+        session = requests.Session()
+        session.headers.update(headers)
+
+        debug_info = {
+            "input": {"from": from_station, "to": to_station},
+            "from_candidates": from_candidates[:6],
+            "to_candidates": to_candidates[:6],
+            "tried": [],
+        }
+
+        for from_name in from_candidates[:6]:
+            relation_dests = _fetch_relation_destinations(from_name)
+            dest_candidates = to_candidates[:6]
+            dest_source = "candidates"
+            if relation_dests:
+                matched = _match_destination(to_station, relation_dests)
+                if matched:
+                    dest_candidates = matched
+                    dest_source = "relation-list"
+                else:
+                    dest_source = "candidates-fallback"
+                    if debug:
+                        debug_info["tried"].append({
+                            "from": from_name,
+                            "to": None,
+                            "status": 200,
+                            "has_fatal": False,
+                            "len": 0,
+                            "note": "destination not in relation list; falling back to candidates",
+                            "relation_list_count": len(relation_dests),
+                        })
+
+            for to_name in dest_candidates:
+                origin_query = from_name.upper()
+                destination_query = to_name.upper()
+                query_url = (
+                    f"{url}?stazpart={quote(origin_query)}&stazarr={quote(destination_query)}"
+                )
+                response = session.get(query_url, timeout=10)
+                if debug:
+                    debug_info["tried"].append(
+                        {
+                            "from": from_name,
+                            "to": to_name,
+                            "status": response.status_code,
+                            "has_fatal": "Fatal error" in response.text,
+                            "len": len(response.text or ""),
+                            "dest_source": dest_source,
+                            "query": {
+                                "from": origin_query,
+                                "to": destination_query,
+                            },
+                        }
+                    )
+                if response.status_code != 200:
+                    continue
+                response.encoding = "utf-8"
+                last_html = response.text
+                results = _parse_relation_html(last_html)
+                if results:
+                    payload = {
+                        "success": True,
+                        "departure": from_name,
+                        "destination": to_name,
+                        "count": len(results),
+                        "rows": results,
+                        "source": "trainstats.altervista.org",
+                    }
+                    if debug:
+                        payload["debug"] = debug_info
+                    return payload
+
+        if last_html and "Fatal error" in last_html:
+            if debug:
+                raise HTTPException(status_code=404, detail={"message": "No relation data found for selected stations", "debug": debug_info})
+            raise HTTPException(status_code=404, detail="No relation data found for selected stations")
+        if debug:
+            raise HTTPException(status_code=404, detail={"message": "No relation data found for selected stations", "debug": debug_info})
+        raise HTTPException(status_code=404, detail="No relation data found for selected stations")
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Failed to fetch relation data: {str(exc)}")
+
+
+@app.get("/stats/external-relation-stations")
+def get_external_relation_stations():
+    """Return TrainStats station list for relation selection."""
+    try:
+        import requests
+        import re
+        import time
+
+        cache = _TRAINSTATS_STATION_CACHE
+        now = time.time()
+        if cache.get("list") and cache.get("ts") and (now - cache["ts"]) < 21600:
+            return {"stations": cache["list"]}
+
+        script_url = "https://trainstats.altervista.org/script/scriptCercaRelazioni.js?v=2"
+        headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+            "Accept": "text/javascript,application/javascript,*/*;q=0.8",
+            "Accept-Language": "it-IT,it;q=0.9,en;q=0.8",
+            "Referer": "https://trainstats.altervista.org/cercarelazione.php",
+        }
+        resp = requests.get(script_url, headers=headers, timeout=10)
+        if resp.status_code != 200:
+            raise HTTPException(status_code=502, detail="Failed to load TrainStats station list")
+        resp.encoding = "utf-8"
+        array_match = re.search(r"var\s+value\s*=\s*\[(.*?)\];", resp.text, flags=re.S)
+        array_blob = array_match.group(1) if array_match else resp.text
+        matches = re.findall(r'"([^"]+)"', array_blob)
+        stations = sorted({(m or "").strip() for m in matches if (m or "").strip()})
+        cache["ts"] = now
+        cache["list"] = stations
+        return {"stations": stations}
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Failed to fetch TrainStats station list: {str(exc)}")
+
+
+@app.get("/stats/external-relation-origins")
+def get_external_relation_origins():
+    """Return TrainStats origin list for relation selection."""
+    return get_external_relation_stations()
+
+
+@app.get("/stats/external-relation-destinations")
+def get_external_relation_destinations(staz: str):
+    """Return TrainStats destination list for a given origin station."""
+    origin = (staz or "").strip()
+    if not origin:
+        raise HTTPException(status_code=400, detail="Origin station is required")
+
+    try:
+        import requests
+        from urllib.parse import quote
+
+        rel_url = "https://trainstats.altervista.org/libs/getRelazioniByCodStazione.php"
+        headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+            "Accept": "text/plain,*/*;q=0.8",
+            "Accept-Language": "it-IT,it;q=0.9,en;q=0.8",
+            "Referer": "https://trainstats.altervista.org/cercarelazione.php",
+        }
+        query_url = f"{rel_url}?staz={quote(origin.upper())}"
+        resp = requests.get(query_url, headers=headers, timeout=10)
+        if resp.status_code != 200:
+            raise HTTPException(status_code=502, detail="Failed to load TrainStats relation list")
+        text = (resp.text or "").strip()
+        if len(text) <= 1:
+            return {"origin": origin, "destinations": []}
+        destinations = sorted({p.strip() for p in text.split(";") if p and p.strip()})
+        return {"origin": origin, "destinations": destinations}
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Failed to fetch TrainStats relation list: {str(exc)}")
 
 
 if __name__ == "__main__":

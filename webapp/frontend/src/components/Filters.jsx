@@ -19,6 +19,26 @@ const Filters = ({ onChange, onDatasetApplied, initialFilters = {} }) => {
   const [endDate, setEndDate] = useState(initialFilters.endDate || '');
   const [stationQuery, setStationQuery] = useState(initialFilters.stationQuery || '');
   const [selectedStations, setSelectedStations] = useState([]); // Array of {code, name, region, regionName}
+  const [relationFrom, setRelationFrom] = useState('');
+  const [relationTo, setRelationTo] = useState('');
+  const [relationModalOpen, setRelationModalOpen] = useState(false);
+  const [relationFromQuery, setRelationFromQuery] = useState('');
+  const [relationToQuery, setRelationToQuery] = useState('');
+  const [relationFromStation, setRelationFromStation] = useState(null);
+  const [relationToStation, setRelationToStation] = useState(null);
+  const [relationFromSuggestions, setRelationFromSuggestions] = useState([]);
+  const [relationToSuggestions, setRelationToSuggestions] = useState([]);
+  const [relationFromLoading, setRelationFromLoading] = useState(false);
+  const [relationToLoading, setRelationToLoading] = useState(false);
+  const [relationFromOpen, setRelationFromOpen] = useState(false);
+  const [relationToOpen, setRelationToOpen] = useState(false);
+  const [relationDestinations, setRelationDestinations] = useState([]);
+  const [relationDestinationsLoading, setRelationDestinationsLoading] = useState(false);
+  const [relationResults, setRelationResults] = useState([]);
+  const [relationLoading, setRelationLoading] = useState(false);
+  const [relationError, setRelationError] = useState(null);
+  const relationFromMouseDown = useRef(false);
+  const relationToMouseDown = useRef(false);
 
   const [availableCompanies, setAvailableCompanies] = useState([]);
   const [availableRegions, setAvailableRegions] = useState([]);
@@ -190,6 +210,103 @@ const Filters = ({ onChange, onDatasetApplied, initialFilters = {} }) => {
     };
   }, [stationQuery]);
 
+  useEffect(() => {
+    let cancelled = false;
+    const fetchRelationDestinations = async () => {
+      if (!relationFromStation?.name) {
+        setRelationDestinations([]);
+        return;
+      }
+      try {
+        setRelationDestinationsLoading(true);
+        const res = await apiService.getExternalRelationDestinations(relationFromStation.name);
+        if (cancelled) return;
+        setRelationDestinations(res?.data?.destinations || []);
+      } catch (err) {
+        if (!cancelled) setRelationDestinations([]);
+        console.error('Failed to load relation destinations', err);
+      } finally {
+        if (!cancelled) setRelationDestinationsLoading(false);
+      }
+    };
+    fetchRelationDestinations();
+    return () => {
+      cancelled = true;
+    };
+  }, [relationFromStation]);
+
+  const mapStationSuggestions = (features = []) => (
+    features
+      .map((f) => {
+        const props = f.properties || {};
+        return {
+          code: props.code,
+          name: props.name || props.short_name || props.shortName || props.code,
+          region: props.region,
+          regionName: props.region_name || props.regionName || null,
+        };
+      })
+      .filter((s) => s.name)
+      .sort((a, b) => {
+        const an = String(a.name || '').trim();
+        const bn = String(b.name || '').trim();
+        const byName = an.localeCompare(bn, 'it', { sensitivity: 'base' });
+        if (byName !== 0) return byName;
+
+        const ac = String(a.code || '').trim();
+        const bc = String(b.code || '').trim();
+        return ac.localeCompare(bc, 'it', { sensitivity: 'base' });
+      })
+  );
+
+  useEffect(() => {
+    const q = (relationFromQuery || '').trim();
+    if (q.length < 2) {
+      setRelationFromSuggestions([]);
+      setRelationFromLoading(false);
+      return;
+    }
+
+    let cancelled = false;
+    setRelationFromLoading(true);
+
+    const t = setTimeout(async () => {
+      try {
+        const res = await apiService.getStations({ q, limit: 0 });
+        if (cancelled) return;
+        const features = res?.data?.features || [];
+        setRelationFromSuggestions(mapStationSuggestions(features));
+      } catch (err) {
+        if (!cancelled) setRelationFromSuggestions([]);
+        console.error('Failed to load origin stations', err);
+      } finally {
+        if (!cancelled) setRelationFromLoading(false);
+      }
+    }, 250);
+
+    return () => {
+      cancelled = true;
+      clearTimeout(t);
+    };
+  }, [relationFromQuery]);
+
+  useEffect(() => {
+    const q = (relationToQuery || '').trim();
+    if (!relationDestinations.length) {
+      setRelationToSuggestions([]);
+      setRelationToLoading(relationDestinationsLoading);
+      return;
+    }
+
+    const needle = q.toLowerCase();
+    const matches = relationDestinations
+      .filter((name) => (needle ? String(name || '').toLowerCase().includes(needle) : true))
+      .slice(0, 50)
+      .map((name) => ({ name }));
+    setRelationToSuggestions(matches);
+    setRelationToLoading(relationDestinationsLoading);
+  }, [relationToQuery, relationDestinations, relationDestinationsLoading]);
+
 
   const selectStation = (s) => {
     setSelectedStations((prev) => {
@@ -230,6 +347,12 @@ const Filters = ({ onChange, onDatasetApplied, initialFilters = {} }) => {
     setEndDate('');
     setStationQuery('');
     setSelectedStations([]);
+    setRelationFrom('');
+    setRelationTo('');
+    setRelationFromQuery('');
+    setRelationToQuery('');
+    setRelationFromStation(null);
+    setRelationToStation(null);
     onChange?.({});
   };
 
@@ -303,6 +426,41 @@ const Filters = ({ onChange, onDatasetApplied, initialFilters = {} }) => {
     if (uploading) return;
     setUploadModalOpen(false);
   };
+
+  const closeRelationModal = () => {
+    setRelationModalOpen(false);
+  };
+
+  const fetchRelationData = async () => {
+    if (!relationFromStation || !relationToStation) return;
+    const fromName = relationFromStation.name || relationFromQuery || relationFrom;
+    const toName = relationToStation.name || relationToQuery || relationTo;
+
+    if (!fromName || !toName) return;
+
+    try {
+      setRelationLoading(true);
+      setRelationError(null);
+      const res = await apiService.getExternalRelation(fromName, toName);
+      setRelationResults(res?.data?.rows || []);
+    } catch (err) {
+      const status = err?.response?.status;
+      if (status === 404) {
+        setRelationResults([]);
+        setRelationError('No relation data found for the selected stations.');
+      } else {
+        setRelationResults([]);
+        setRelationError('Failed to load relation data. Please try again.');
+      }
+    } finally {
+      setRelationLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    if (!relationModalOpen) return;
+    fetchRelationData();
+  }, [relationModalOpen, relationFromStation, relationToStation]);
 
   const handleDeleteArchive = () => {
     if (!selectedArchive || selectedArchiveInfo?.is_default || selectedArchiveInfo?.is_current) return;
@@ -794,6 +952,135 @@ const Filters = ({ onChange, onDatasetApplied, initialFilters = {} }) => {
             </div>
           </div>
 
+          {/* Station Relation */}
+          <div className="filters-subsection">
+            <h3>🔁 Station Relation</h3>
+            <p className="relation-hint">
+              Compare departures between two stations. The full relation analysis will be enabled once backend support is ready.
+            </p>
+            <div className="relation-grid">
+              <div className="relation-input">
+                <label>Departure</label>
+                <div className="relation-search">
+                  <input
+                    type="text"
+                    placeholder="Type origin station (e.g., Pisa Centrale)"
+                    value={relationFromQuery}
+                    onChange={(e) => {
+                      setRelationFromQuery(e.target.value);
+                      setRelationFromStation(null);
+                      setRelationFrom(e.target.value);
+                      setRelationFromOpen(true);
+                    }}
+                    autoComplete="off"
+                    onFocus={() => setRelationFromOpen(true)}
+                    onBlur={() => setTimeout(() => {
+                      if (!relationFromMouseDown.current) setRelationFromOpen(false);
+                    }, 150)}
+                  />
+                  {(relationFromOpen && (relationFromLoading || relationFromSuggestions.length > 0)) && (
+                    <div
+                      className="station-suggestions improved-scroll"
+                      onMouseDown={() => { relationFromMouseDown.current = true; }}
+                      onMouseUp={() => { setTimeout(() => { relationFromMouseDown.current = false; }, 0); }}
+                    >
+                      {relationFromLoading && (
+                        <div className="station-suggestion muted">Searching…</div>
+                      )}
+                      {!relationFromLoading && relationFromSuggestions.length === 0 && (
+                        <div className="station-suggestion muted">No matches</div>
+                      )}
+                      {!relationFromLoading && relationFromSuggestions.map((s) => (
+                        <button
+                          type="button"
+                          key={`${s.code || ''}-${s.name}-${s.region || ''}-${s.regionName || ''}`}
+                          className="station-suggestion relation-suggestion"
+                          onMouseDown={(e) => e.preventDefault()}
+                          onClick={() => {
+                            setRelationFromStation(s);
+                            setRelationFromQuery(s.name);
+                            setRelationFrom(s.name);
+                            setRelationToStation(null);
+                            setRelationToQuery('');
+                            setRelationTo('');
+                            setRelationFromOpen(false);
+                          }}
+                        >
+                          <span className="station-name"><b>{s.name}</b></span>
+                          {s.regionName ? <span className="station-region"> — {s.regionName}</span> : null}
+                          {s.code && <span className="station-code">{s.code}</span>}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
+              <div className="relation-input">
+                <label>Destination</label>
+                <div className="relation-search">
+                  <input
+                    type="text"
+                    placeholder="Type destination station (e.g., Roma Termini)"
+                    value={relationToQuery}
+                    onChange={(e) => {
+                      setRelationToQuery(e.target.value);
+                      setRelationToStation(null);
+                      setRelationTo(e.target.value);
+                      setRelationToOpen(true);
+                    }}
+                    autoComplete="off"
+                    onFocus={() => setRelationToOpen(true)}
+                    onBlur={() => setTimeout(() => {
+                      if (!relationToMouseDown.current) setRelationToOpen(false);
+                    }, 150)}
+                  />
+                  {(relationToOpen && (relationToLoading || relationToSuggestions.length > 0)) && (
+                    <div
+                      className="station-suggestions improved-scroll"
+                      onMouseDown={() => { relationToMouseDown.current = true; }}
+                      onMouseUp={() => { setTimeout(() => { relationToMouseDown.current = false; }, 0); }}
+                    >
+                      {relationToLoading && (
+                        <div className="station-suggestion muted">Searching…</div>
+                      )}
+                      {!relationToLoading && relationToSuggestions.length === 0 && (
+                        <div className="station-suggestion muted">No matches</div>
+                      )}
+                      {!relationToLoading && relationToSuggestions.map((s) => (
+                        <button
+                          type="button"
+                          key={`${s.code || ''}-${s.name}-${s.region || ''}-${s.regionName || ''}`}
+                          className="station-suggestion relation-suggestion"
+                          onMouseDown={(e) => e.preventDefault()}
+                          onClick={() => {
+                            setRelationToStation(s);
+                            setRelationToQuery(s.name);
+                            setRelationTo(s.name);
+                            setRelationToOpen(false);
+                          }}
+                        >
+                          <span className="station-name"><b>{s.name}</b></span>
+                          {s.regionName ? <span className="station-region"> — {s.regionName}</span> : null}
+                          {s.code && <span className="station-code">{s.code}</span>}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+            <div className="relation-actions">
+              <button
+                className="btn btn-primary relation-cta"
+                type="button"
+                disabled={!relationFromStation || !relationToStation}
+                onClick={() => setRelationModalOpen(true)}
+              >
+                Compare Relation
+              </button>
+            </div>
+          </div>
+
           {/* Companies */}
           <div className="filters-subsection">
             <h3>🏢 Companies</h3>
@@ -865,6 +1152,109 @@ const Filters = ({ onChange, onDatasetApplied, initialFilters = {} }) => {
                   disabled={deletingArchive}
                 >
                   {deletingArchive ? 'Deleting...' : 'Delete Archive'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </>
+      )}
+
+      {relationModalOpen && (
+        <>
+          <div
+            className="modal-overlay"
+            role="presentation"
+            onClick={closeRelationModal}
+          ></div>
+          <div
+            className="modal-dialog relation-modal"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="relation-modal-title"
+          >
+            <div className="modal-content">
+              <div className="modal-header">
+                <div className="modal-title-icon">🔁</div>
+                <div>
+                  <h3 className="modal-title" id="relation-modal-title">Station Relation</h3>
+                  <p className="modal-subtitle">Compare departures between selected stations.</p>
+                </div>
+              </div>
+              <div className="modal-body">
+                <div className="relation-modal-summary">
+                  <div className="relation-modal-row">
+                    <span className="relation-modal-label">Departure</span>
+                    <span className="relation-modal-value">
+                      {relationFromStation?.name || relationFrom || '—'}
+                      {relationFromStation?.code ? ` (${relationFromStation.code})` : ''}
+                    </span>
+                  </div>
+                  <div className="relation-modal-row">
+                    <span className="relation-modal-label">Destination</span>
+                    <span className="relation-modal-value">
+                      {relationToStation?.name || relationTo || '—'}
+                      {relationToStation?.code ? ` (${relationToStation.code})` : ''}
+                    </span>
+                  </div>
+                </div>
+                <div className="relation-modal-body">
+                  {relationLoading ? (
+                    <div className="relation-modal-note">Loading relation data…</div>
+                  ) : relationError ? (
+                    <div className="relation-modal-note relation-modal-error">{relationError}</div>
+                  ) : relationResults.length === 0 ? (
+                    <div className="relation-modal-note">No relation data available yet.</div>
+                  ) : (
+                    <div className="relation-table-wrap">
+                      <table className="relation-table">
+                        <thead>
+                          <tr>
+                            <th>Category</th>
+                            <th>Train</th>
+                            <th>Departure</th>
+                            <th>Dep. Time</th>
+                            <th>Dep. Delay</th>
+                            <th>Destination</th>
+                            <th>Arr. Time</th>
+                            <th>Arr. Delay</th>
+                            <th>Track</th>
+                            <th>Last Seen</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {relationResults.map((row, idx) => (
+                            <tr key={`${row.train_number || 'train'}-${idx}`}>
+                              <td>{row.category || '—'}</td>
+                              <td>{row.train_number || '—'}</td>
+                              <td>{row.origin || '—'}</td>
+                              <td>{row.origin_time || '—'}</td>
+                              <td>{row.origin_delay || '—'}</td>
+                              <td>{row.destination || '—'}</td>
+                              <td>{row.destination_time || '—'}</td>
+                              <td>{row.destination_delay || '—'}</td>
+                              <td>{row.track || '—'}</td>
+                              <td>{row.date || '—'}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                </div>
+              </div>
+              <div className="modal-footer">
+                <button
+                  className="btn btn-secondary"
+                  onClick={closeRelationModal}
+                >
+                  Close
+                </button>
+                <button
+                  className="btn btn-primary"
+                  disabled={!relationFromStation || !relationToStation || relationLoading}
+                  onClick={fetchRelationData}
+                >
+                  {relationLoading ? 'Loading…' : 'Run Comparison'}
                 </button>
               </div>
             </div>
