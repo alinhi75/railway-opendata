@@ -2412,6 +2412,414 @@ def get_external_relation_destinations(staz: str):
         raise HTTPException(status_code=500, detail=f"Failed to fetch TrainStats relation list: {str(exc)}")
 
 
+@app.get("/stats/external-train")
+def get_external_train(
+    treno: str,
+    stazpart: str,
+    stazarr: str,
+    op: str,
+    oa: str,
+    ref: str = "cr",
+):
+    """Fetch train detail data from TrainStats cercatreno.php."""
+    train_number = (treno or "").strip()
+    origin = (stazpart or "").strip()
+    destination = (stazarr or "").strip()
+    origin_time = (op or "").strip()
+    destination_time = (oa or "").strip()
+
+    if not all([train_number, origin, destination, origin_time, destination_time]):
+        raise HTTPException(status_code=400, detail="Missing required train detail parameters")
+
+    try:
+        import requests
+        from bs4 import BeautifulSoup
+        from urllib.parse import quote
+        import re
+
+        url = "https://trainstats.altervista.org/cercatreno.php"
+        headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+            "Accept-Language": "it-IT,it;q=0.9,en;q=0.8",
+            "Cache-Control": "no-cache",
+            "Pragma": "no-cache",
+            "Referer": "https://trainstats.altervista.org/cercarelazione.php",
+        }
+
+        query_url = (
+            f"{url}?ref={quote(ref)}"
+            f"&treno={quote(train_number)}"
+            f"&stazpart={quote(origin)}"
+            f"&stazarr={quote(destination)}"
+            f"&op={quote(origin_time)}"
+            f"&oa={quote(destination_time)}"
+        )
+        response = requests.get(query_url, headers=headers, timeout=12)
+        if response.status_code != 200:
+            raise HTTPException(status_code=502, detail="Failed to load TrainStats train detail")
+        response.encoding = "utf-8"
+
+        page_text = response.text
+
+        soup = BeautifulSoup(page_text, "html.parser")
+
+        def _table_rows(table):
+            rows = []
+            for row in table.find_all("tr"):
+                cells = [c.get_text(" ", strip=True) for c in row.find_all(["th", "td"])]
+                if cells:
+                    rows.append(cells)
+            return rows
+
+        def _normalize_header(header):
+            return [h.strip().lower() for h in header]
+
+        def _normalize_cell(value: str) -> str:
+            import re
+            import unicodedata
+
+            text = (value or "").strip().lower()
+            if not text:
+                return ""
+            text = unicodedata.normalize("NFKD", text)
+            text = "".join([c for c in text if not unicodedata.combining(c)])
+            text = re.sub(r"[^a-z0-9\s]", " ", text)
+            text = re.sub(r"\s+", " ", text).strip()
+            return text
+
+        def _clean_row(row):
+            cleaned = [c.strip() for c in row if c is not None]
+            if cleaned and cleaned[0] == "" and len(cleaned) > 1:
+                cleaned = cleaned[1:]
+            return cleaned
+
+        def _row_contains_token(row, token):
+            norm_token = _normalize_cell(token)
+            for cell in row:
+                if norm_token and norm_token in _normalize_cell(cell):
+                    return True
+            return False
+
+        def _find_header_index(rows, required):
+            required = {r.lower() for r in required}
+            for idx, row in enumerate(rows):
+                norm = {_normalize_cell(c) for c in row if c}
+                if required.issubset(norm):
+                    return idx
+            return None
+
+        def _first_non_empty(row):
+            for cell in row:
+                if cell and cell.strip():
+                    return cell.strip()
+            return ""
+
+        def _last_non_empty(row):
+            for cell in reversed(row):
+                if cell and cell.strip():
+                    return cell.strip()
+            return ""
+
+        def _extract_key_values(rows, valid_keys=None):
+            data = {}
+            keyset = {k.lower() for k in valid_keys} if valid_keys else None
+            for row in rows:
+                cleaned = _clean_row(row)
+                key = _first_non_empty(cleaned)
+                value = _last_non_empty(cleaned)
+                if not key or key == value:
+                    continue
+                if keyset and key.lower() not in keyset:
+                    continue
+                data[key] = value
+            return data
+
+        def _rows_to_key_values(rows):
+            data = {}
+            for row in rows:
+                cleaned = [c.strip() for c in row if c is not None]
+                cleaned = [c for c in cleaned if c]
+                if len(cleaned) < 2:
+                    continue
+                key = cleaned[0]
+                value = cleaned[-1]
+                if key:
+                    data[key] = value
+            return data
+
+        regularity = {}
+        punctuality_departure = {}
+        punctuality_arrival = {}
+        average_delay_by_day = []
+        daily_records = []
+
+        def _parse_inline_data(page_html: str):
+            parsed = {
+                "regularity": {},
+                "punctuality_departure": {},
+                "punctuality_arrival": {},
+                "daily_records": [],
+            }
+
+            data_match = re.search(
+                r"var\s+data\s*=\s*['\"]([^'\"]+)['\"]\s*\.split\(\s*['\"];['\"]\s*\)",
+                page_html,
+            )
+            if data_match:
+                raw_values = data_match.group(1).split(";")
+                if len(raw_values) >= 9:
+                    dep_on_time = raw_values[0]
+                    dep_late = raw_values[1]
+                    arr_early = raw_values[2]
+                    arr_on_time = raw_values[3]
+                    arr_late = raw_values[4]
+                    regolari = raw_values[5]
+                    cancellati = raw_values[6]
+                    riprogrammati = raw_values[7]
+                    totali = raw_values[8]
+
+                    parsed["regularity"] = {
+                        "Regolari": regolari,
+                        "Riprogrammati": riprogrammati,
+                        "Cancellati": cancellati,
+                        "Totali": totali,
+                    }
+                    parsed["punctuality_departure"] = {
+                        "In orario": dep_on_time,
+                        "In ritardo": dep_late,
+                    }
+                    parsed["punctuality_arrival"] = {
+                        "In anticipo": arr_early,
+                        "In orario": arr_on_time,
+                        "In ritardo": arr_late,
+                    }
+
+            csv_match = re.search(
+                r"var\s+tabDGdataCSV\s*=\s*`(.*?)`\s*;",
+                page_html,
+                flags=re.S,
+            )
+            if csv_match:
+                raw_csv = csv_match.group(1)
+                flat = raw_csv.replace("\r", " ").replace("\n", " ")
+                chunks = [c.strip() for c in re.split(r"\s{2,}", flat) if ";" in c]
+                header_idx = None
+                for idx, chunk in enumerate(chunks):
+                    if chunk.strip().lower().startswith("giorno;data;"):
+                        header_idx = idx
+                        break
+
+                if header_idx is not None:
+                    header = chunks[header_idx].split(";")
+                    header_map = {_normalize_cell(name): i for i, name in enumerate(header)}
+
+                    def _idx_for(key: str) -> Optional[int]:
+                        return header_map.get(_normalize_cell(key))
+
+                    idx_day = _idx_for("giorno")
+                    idx_date = _idx_for("data")
+                    idx_origin = _idx_for("stazione partenza")
+                    idx_origin_time = _idx_for("partenza prog")
+                    idx_origin_delay = _idx_for("ritardo partenza")
+                    idx_dest = _idx_for("stazione arrivo")
+                    idx_dest_time = _idx_for("arrivo prog")
+                    idx_dest_delay = _idx_for("ritardo arrivo")
+                    idx_actions = _idx_for("provvedimenti")
+                    idx_notes = _idx_for("variazioni")
+
+                    for row in chunks[header_idx + 1 :]:
+                        cols = [c.strip() for c in row.split(";")]
+                        if len(cols) < 6:
+                            continue
+                        parsed["daily_records"].append(
+                            {
+                                "day": cols[idx_day] if idx_day is not None and idx_day < len(cols) else "",
+                                "date": cols[idx_date] if idx_date is not None and idx_date < len(cols) else "",
+                                "origin": cols[idx_origin] if idx_origin is not None and idx_origin < len(cols) else "",
+                                "origin_time": cols[idx_origin_time] if idx_origin_time is not None and idx_origin_time < len(cols) else "",
+                                "origin_delay": cols[idx_origin_delay] if idx_origin_delay is not None and idx_origin_delay < len(cols) else "",
+                                "destination": cols[idx_dest] if idx_dest is not None and idx_dest < len(cols) else "",
+                                "destination_time": cols[idx_dest_time] if idx_dest_time is not None and idx_dest_time < len(cols) else "",
+                                "destination_delay": cols[idx_dest_delay] if idx_dest_delay is not None and idx_dest_delay < len(cols) else "",
+                                "actions": cols[idx_actions] if idx_actions is not None and idx_actions < len(cols) else "",
+                                "notes": cols[idx_notes] if idx_notes is not None and idx_notes < len(cols) else "",
+                            }
+                        )
+
+            return parsed
+
+        tables = soup.find_all("table")
+        for table in tables:
+            rows = _table_rows(table)
+            if not rows:
+                continue
+            cleaned_rows = [_clean_row(r) for r in rows if r]
+            cleaned_rows = [r for r in cleaned_rows if r]
+            if not cleaned_rows:
+                continue
+
+            header = cleaned_rows[0]
+            header_norm = _normalize_header(header)
+            body_rows = cleaned_rows[1:] if len(cleaned_rows) > 1 else []
+
+            reg_keys = {"regolari", "riprogrammati", "cancellati", "totali"}
+            dep_keys = {"in orario", "in ritardo"}
+            arr_keys = {"in anticipo", "in orario", "in ritardo"}
+
+            treni_idx = _find_header_index(cleaned_rows, {"treni"})
+            if treni_idx is not None:
+                regularity = _extract_key_values(cleaned_rows[treni_idx + 1 :], reg_keys)
+                if regularity:
+                    continue
+
+            partenza_idx = _find_header_index(cleaned_rows, {"partenza"})
+            if partenza_idx is not None:
+                punctuality_departure = _extract_key_values(cleaned_rows[partenza_idx + 1 :], dep_keys)
+                if punctuality_departure:
+                    continue
+
+            arrivo_idx = _find_header_index(cleaned_rows, {"arrivo"})
+            if arrivo_idx is not None:
+                punctuality_arrival = _extract_key_values(cleaned_rows[arrivo_idx + 1 :], arr_keys)
+                if punctuality_arrival:
+                    continue
+
+            avg_idx = _find_header_index(cleaned_rows, {"giorno", "partenza", "arrivo"})
+            if avg_idx is not None:
+                for row in cleaned_rows[avg_idx + 1 :]:
+                    if len(row) < 3:
+                        continue
+                    average_delay_by_day.append({
+                        "day": row[0],
+                        "departure": row[1],
+                        "arrival": row[2],
+                    })
+                if average_delay_by_day:
+                    continue
+
+            daily_idx = _find_header_index(
+                cleaned_rows,
+                {"giorno", "data", "stazione partenza", "partenza prog.", "ritardo partenza"},
+            )
+            if daily_idx is not None:
+                header_row = cleaned_rows[daily_idx]
+                header_map = { _normalize_cell(name): idx for idx, name in enumerate(header_row) }
+                def _idx_for(key):
+                    return header_map.get(_normalize_cell(key))
+
+                idx_day = _idx_for("giorno")
+                idx_date = _idx_for("data")
+                idx_origin = _idx_for("stazione partenza")
+                idx_origin_time = _idx_for("partenza prog")
+                idx_origin_delay = _idx_for("ritardo partenza")
+                idx_dest = _idx_for("stazione arrivo")
+                idx_dest_time = _idx_for("arrivo prog")
+                idx_dest_delay = _idx_for("ritardo arrivo")
+                idx_actions = _idx_for("provvedimenti")
+                idx_notes = _idx_for("variazioni")
+
+                for row in cleaned_rows[daily_idx + 1 :]:
+                    if len(row) < 5:
+                        continue
+                    daily_records.append({
+                        "day": row[idx_day] if idx_day is not None and idx_day < len(row) else "",
+                        "date": row[idx_date] if idx_date is not None and idx_date < len(row) else "",
+                        "origin": row[idx_origin] if idx_origin is not None and idx_origin < len(row) else "",
+                        "origin_time": row[idx_origin_time] if idx_origin_time is not None and idx_origin_time < len(row) else "",
+                        "origin_delay": row[idx_origin_delay] if idx_origin_delay is not None and idx_origin_delay < len(row) else "",
+                        "destination": row[idx_dest] if idx_dest is not None and idx_dest < len(row) else "",
+                        "destination_time": row[idx_dest_time] if idx_dest_time is not None and idx_dest_time < len(row) else "",
+                        "destination_delay": row[idx_dest_delay] if idx_dest_delay is not None and idx_dest_delay < len(row) else "",
+                        "actions": row[idx_actions] if idx_actions is not None and idx_actions < len(row) else "",
+                        "notes": row[idx_notes] if idx_notes is not None and idx_notes < len(row) else "",
+                    })
+                if daily_records:
+                    continue
+
+            if not regularity:
+                regularity = _extract_key_values(cleaned_rows, reg_keys)
+
+            if not punctuality_departure and any(_row_contains_token(r, "partenza") for r in cleaned_rows):
+                punctuality_departure = _extract_key_values(cleaned_rows, dep_keys)
+
+            if not punctuality_arrival and any(_row_contains_token(r, "arrivo") for r in cleaned_rows):
+                punctuality_arrival = _extract_key_values(cleaned_rows, arr_keys)
+
+            if header_norm and header_norm[0] == "treni":
+                regularity = _rows_to_key_values(body_rows)
+                continue
+
+            if header_norm and header_norm[0] == "partenza":
+                punctuality_departure = _rows_to_key_values(body_rows)
+                continue
+
+            if header_norm and header_norm[0] == "arrivo":
+                punctuality_arrival = _rows_to_key_values(body_rows)
+                continue
+
+            if {"giorno", "partenza", "arrivo"}.issubset(set(header_norm)):
+                for row in body_rows:
+                    if len(row) < 3:
+                        continue
+                    average_delay_by_day.append({
+                        "day": row[0],
+                        "departure": row[1],
+                        "arrival": row[2],
+                    })
+                continue
+
+            if {"giorno", "data", "stazione partenza", "partenza prog.", "ritardo partenza"}.issubset(set(header_norm)):
+                for row in body_rows:
+                    if len(row) < 9:
+                        continue
+                    daily_records.append({
+                        "day": row[0],
+                        "date": row[1],
+                        "origin": row[2],
+                        "origin_time": row[3],
+                        "origin_delay": row[4],
+                        "destination": row[5],
+                        "destination_time": row[6],
+                        "destination_delay": row[7],
+                        "actions": row[8] if len(row) > 8 else "",
+                        "notes": row[9] if len(row) > 9 else "",
+                    })
+                continue
+
+        inline = _parse_inline_data(page_text)
+        if not regularity and inline.get("regularity"):
+            regularity = inline["regularity"]
+        if not punctuality_departure and inline.get("punctuality_departure"):
+            punctuality_departure = inline["punctuality_departure"]
+        if not punctuality_arrival and inline.get("punctuality_arrival"):
+            punctuality_arrival = inline["punctuality_arrival"]
+        if not daily_records and inline.get("daily_records"):
+            daily_records = inline["daily_records"]
+
+        title = (soup.title.get_text(strip=True) if soup.title else "")
+
+        return {
+            "success": True,
+            "title": title,
+            "train_number": train_number,
+            "origin": origin,
+            "destination": destination,
+            "origin_time": origin_time,
+            "destination_time": destination_time,
+            "regularity": regularity,
+            "punctuality_departure": punctuality_departure,
+            "punctuality_arrival": punctuality_arrival,
+            "average_delay_by_day": average_delay_by_day,
+            "daily_records": daily_records,
+            "source": "trainstats.altervista.org",
+        }
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Failed to fetch train detail: {str(exc)}")
+
+
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=8000)

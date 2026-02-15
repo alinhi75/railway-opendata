@@ -69,6 +69,8 @@ export const apiService = {
     params: { stazpart: departure, stazarr: destination },
   }),
 
+  getExternalTrainDetail: (params = {}) => api.get('/stats/external-train', { params }),
+
   getExternalRelationStations: () => api.get('/stats/external-relation-stations'),
 
   getExternalRelationOrigins: () => api.get('/stats/external-relation-origins'),
