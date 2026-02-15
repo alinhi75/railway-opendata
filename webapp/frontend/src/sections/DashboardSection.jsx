@@ -77,6 +77,16 @@ const DashboardSection = ({ filters = {}, datasetVersion = 0 }) => {
 
   const metric = getMetric();
 
+  const hasNAValues = () => {
+    return (
+      metric.mean === 'N/A' ||
+      metric.std === 'N/A' ||
+      metric.min === 'N/A' ||
+      metric.max === 'N/A' ||
+      metric.count === 0
+    );
+  };
+
   return (
     <div className="dashboard">
       <div className="dashboard-container">
@@ -99,12 +109,12 @@ const DashboardSection = ({ filters = {}, datasetVersion = 0 }) => {
           </div>
         ) : (
           <>
-            {Number(metric.count) === 0 && (
+            {hasNAValues() && (
               <div className="empty-state">
                 <div className="empty-icon">⚠️</div>
                 <div className="empty-text">
-                  <strong>Not enough data for this station.</strong>
-                  <span>Try a wider date range or remove the station filter.</span>
+                  <strong>Not enough data for the selected date range or filters.</strong>
+                  <span>Please select another filter or adjust your search criteria.</span>
                 </div>
               </div>
             )}

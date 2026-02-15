@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import { apiService } from '../services/api';
 import './Filters.css';
 
@@ -44,6 +45,8 @@ const Filters = ({ onChange, onDatasetApplied, initialFilters = {} }) => {
   const [relationDetailModalOpen, setRelationDetailModalOpen] = useState(false);
   const relationFromMouseDown = useRef(false);
   const relationToMouseDown = useRef(false);
+  const [stationToolsContainer, setStationToolsContainer] = useState(null);
+  const appliedFiltersRef = useRef(initialFilters || {});
 
   const [availableCompanies, setAvailableCompanies] = useState([]);
   const [availableRegions, setAvailableRegions] = useState([]);
@@ -325,9 +328,7 @@ const Filters = ({ onChange, onDatasetApplied, initialFilters = {} }) => {
     setSelectedStations((prev) => prev.filter((s) => s.code !== code));
   };
 
-  const applyFilters = () => {
-    if (dateRangeError) return;
-    // Combine all active filters
+  const buildFiltersPayload = () => {
     const filters = {
       startDate: startDate || null,
       endDate: endDate || null,
@@ -336,13 +337,40 @@ const Filters = ({ onChange, onDatasetApplied, initialFilters = {} }) => {
       stationQuery: stationQuery || null,
       stationCodes: selectedStations.length > 0 ? selectedStations.map((s) => s.code).filter(Boolean) : null,
     };
-    
-    // Remove null values for cleaner params
-    const cleanedFilters = Object.fromEntries(
+
+    return Object.fromEntries(
       Object.entries(filters).filter(([_, v]) => v !== null)
     );
-    
+  };
+
+  const applyFilters = () => {
+    if (dateRangeError) return;
+    const cleanedFilters = buildFiltersPayload();
+    appliedFiltersRef.current = cleanedFilters;
     onChange?.(cleanedFilters);
+  };
+
+  const applyStationSelection = () => {
+    const stationCodes = selectedStations.map((s) => s.code).filter(Boolean);
+    const next = { ...appliedFiltersRef.current };
+    if (stationCodes.length > 0) {
+      next.stationCodes = stationCodes;
+    } else {
+      delete next.stationCodes;
+      delete next.stationCode;
+    }
+    appliedFiltersRef.current = next;
+    onChange?.(next);
+  };
+
+  const clearStationSelection = () => {
+    setSelectedStations([]);
+    setStationQuery('');
+    const next = { ...appliedFiltersRef.current };
+    delete next.stationCodes;
+    delete next.stationCode;
+    appliedFiltersRef.current = next;
+    onChange?.(next);
   };
 
   const clearFilters = () => {
@@ -579,7 +607,6 @@ const Filters = ({ onChange, onDatasetApplied, initialFilters = {} }) => {
     Boolean(startDate || endDate),
     companies.length > 0,
     regions.length > 0,
-    selectedStations.length > 0 || stationQuery,
   ].filter(Boolean).length;
 
   const selectedRelationRow = selectedRelationIndex !== null
@@ -694,10 +721,282 @@ const Filters = ({ onChange, onDatasetApplied, initialFilters = {} }) => {
     );
   };
 
+  const stationTools = (
+    <section className="filters-section station-tools-section">
+      <div className="filters-main-panel station-tools-panel">
+        <div className="filters-panel-header">
+          <div className="filters-panel-title">🧭 Station Tools</div>
+          <div className="filters-panel-subtitle">Search stations and explore relations before opening the map.</div>
+        </div>
+
+        <div className="active-filters-summary station-active-summary">
+          <strong>Active Station Filters:</strong>
+          {selectedStations.length > 0 ? (
+            <span className="filter-tag">
+              🚉 {selectedStations.length} {selectedStations.length === 1 ? 'station' : 'stations'}
+            </span>
+          ) : (
+            <span className="filter-tag">No stations selected</span>
+          )}
+        </div>
+
+        {/* Station Search */}
+        <div className="filters-subsection">
+        <h3>🚉 Station</h3>
+        <div className="station-search">
+          {/* Selected stations as chips */}
+          <div className="selected-stations-chips">
+            {selectedStations.map((s) => (
+              <span className="station-chip" key={s.code}>
+                {s.name}
+                {s.regionName ? <span className="station-region"> — {s.regionName}</span> : null}
+                {s.code && <span className="station-code">{s.code}</span>}
+                <button className="remove-chip" onClick={() => removeSelectedStation(s.code)} title="Remove">×</button>
+              </span>
+            ))}
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+            <input
+              type="text"
+              placeholder="Type station name (e.g., Milano Centrale)"
+              value={stationQuery}
+              onChange={(e) => {
+                setStationQuery(e.target.value);
+                setDropdownOpen(true);
+              }}
+              autoComplete="off"
+              onFocus={() => setDropdownOpen(true)}
+              onBlur={() => setTimeout(() => {
+                if (!mouseOverSuggestions && !mouseDownOnSuggestions.current) setDropdownOpen(false);
+              }, 150)}
+              style={{ flex: 1 }}
+            />
+            {stationQuery && (
+              <button
+                className="remove-chip"
+                style={{ fontSize: 18, marginLeft: 0, marginRight: 2, padding: '0 6px' }}
+                onClick={() => setStationQuery('')}
+                title="Clear search"
+                tabIndex={-1}
+              >×</button>
+            )}
+          </div>
+          {(dropdownOpen && (stationLoading || stationSuggestions.length > 0)) && (
+            <div
+              className="station-suggestions improved-scroll"
+              onMouseEnter={() => setMouseOverSuggestions(true)}
+              onMouseLeave={() => setMouseOverSuggestions(false)}
+              onMouseDown={() => { mouseDownOnSuggestions.current = true; }}
+              onMouseUp={() => { setTimeout(() => { mouseDownOnSuggestions.current = false; }, 0); }}
+            >
+              {stationLoading && (
+                <div className="station-suggestion muted">Searching…</div>
+              )}
+              {!stationLoading && stationSuggestions.length === 0 && (
+                <div className="station-suggestion muted">No matches</div>
+              )}
+              {!stationLoading && stationSuggestions.map((s) => {
+                const isSelected = selectedStations.some(sel => sel.code === s.code);
+                return (
+                  <label
+                    key={`${s.code || ''}-${s.name}-${s.region || ''}-${s.regionName || ''}`}
+                    className={`station-suggestion${isSelected ? ' selected' : ''}`}
+                    style={{ cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 8 }}
+                    onMouseDown={e => e.preventDefault()}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={isSelected}
+                      onChange={() => {
+                        if (isSelected) {
+                          removeSelectedStation(s.code);
+                        } else {
+                          selectStation(s);
+                        }
+                      }}
+                      style={{ marginRight: 8 }}
+                      tabIndex={-1}
+                    />
+                    <span className="station-name"><b>{s.name}</b></span>
+                    {s.regionName ? <span className="station-region"> — {s.regionName}</span> : null}
+                    {s.code && <span className="station-code">{s.code}</span>}
+                  </label>
+                );
+              })}
+            </div>
+          )}
+            <div className="filters-actions station-tools-actions">
+          <button
+            className="btn btn-secondary"
+            type="button"
+            onClick={clearStationSelection}
+            disabled={selectedStations.length === 0 && !stationQuery}
+          >
+            Clear Stations
+          </button>
+          <button
+            className="btn btn-primary"
+            type="button"
+            onClick={applyStationSelection}
+            disabled={selectedStations.length === 0}
+          >
+            Apply Station Selection
+          </button>
+        </div>
+        </div>
+      </div>
+
+        {/* Station Relation */}
+        <div className="filters-subsection">
+        <h3>🔁 Station Relation</h3>
+        <p className="relation-hint">
+          Compare train counts and details between two stations. Select departure and destination to load relation data, then click "Compare Relation" to view results.
+        </p>
+        <div className="relation-grid">
+          <div className="relation-input">
+            <label>Departure</label>
+            <div className="relation-search">
+              <input
+                type="text"
+                placeholder="Type origin station (e.g., Pisa Centrale)"
+                value={relationFromQuery}
+                onChange={(e) => {
+                  setRelationFromQuery(e.target.value);
+                  setRelationFromStation(null);
+                  setRelationFrom(e.target.value);
+                  setRelationFromOpen(true);
+                }}
+                autoComplete="off"
+                onFocus={() => setRelationFromOpen(true)}
+                onBlur={() => setTimeout(() => {
+                  if (!relationFromMouseDown.current) setRelationFromOpen(false);
+                }, 150)}
+              />
+              {(relationFromOpen && (relationFromLoading || relationFromSuggestions.length > 0)) && (
+                <div
+                  className="station-suggestions improved-scroll"
+                  onMouseDown={() => { relationFromMouseDown.current = true; }}
+                  onMouseUp={() => { setTimeout(() => { relationFromMouseDown.current = false; }, 0); }}
+                >
+                  {relationFromLoading && (
+                    <div className="station-suggestion muted">Searching…</div>
+                  )}
+                  {!relationFromLoading && relationFromSuggestions.length === 0 && (
+                    <div className="station-suggestion muted">No matches</div>
+                  )}
+                  {!relationFromLoading && relationFromSuggestions.map((s) => (
+                    <button
+                      type="button"
+                      key={`${s.code || ''}-${s.name}-${s.region || ''}-${s.regionName || ''}`}
+                      className="station-suggestion relation-suggestion"
+                      onMouseDown={(e) => e.preventDefault()}
+                      onClick={() => {
+                        setRelationFromStation(s);
+                        setRelationFromQuery(s.name);
+                        setRelationFrom(s.name);
+                        setRelationToStation(null);
+                        setRelationToQuery('');
+                        setRelationTo('');
+                        setRelationFromOpen(false);
+                      }}
+                    >
+                      <span className="station-name"><b>{s.name}</b></span>
+                      {s.regionName ? <span className="station-region"> — {s.regionName}</span> : null}
+                      {s.code && <span className="station-code">{s.code}</span>}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+          <div className="relation-input">
+            <label>Destination</label>
+            <div className="relation-search">
+              <input
+                type="text"
+                placeholder="Type destination station (e.g., Roma Termini)"
+                value={relationToQuery}
+                onChange={(e) => {
+                  setRelationToQuery(e.target.value);
+                  setRelationToStation(null);
+                  setRelationTo(e.target.value);
+                  setRelationToOpen(true);
+                }}
+                autoComplete="off"
+                onFocus={() => setRelationToOpen(true)}
+                onBlur={() => setTimeout(() => {
+                  if (!relationToMouseDown.current) setRelationToOpen(false);
+                }, 150)}
+              />
+              {(relationToOpen && (relationToLoading || relationToSuggestions.length > 0)) && (
+                <div
+                  className="station-suggestions improved-scroll"
+                  onMouseDown={() => { relationToMouseDown.current = true; }}
+                  onMouseUp={() => { setTimeout(() => { relationToMouseDown.current = false; }, 0); }}
+                >
+                  {relationToLoading && (
+                    <div className="station-suggestion muted">Searching…</div>
+                  )}
+                  {!relationToLoading && relationToSuggestions.length === 0 && (
+                    <div className="station-suggestion muted">No matches</div>
+                  )}
+                  {!relationToLoading && relationToSuggestions.map((s) => (
+                    <button
+                      type="button"
+                      key={`${s.code || ''}-${s.name}-${s.region || ''}-${s.regionName || ''}`}
+                      className="station-suggestion relation-suggestion"
+                      onMouseDown={(e) => e.preventDefault()}
+                      onClick={() => {
+                        setRelationToStation(s);
+                        setRelationToQuery(s.name);
+                        setRelationTo(s.name);
+                        setRelationToOpen(false);
+                      }}
+                    >
+                      <span className="station-name"><b>{s.name}</b></span>
+                      {s.regionName ? <span className="station-region"> — {s.regionName}</span> : null}
+                      {s.code && <span className="station-code">{s.code}</span>}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          
+          </div>
+        </div>
+        <div className="relation-actions">
+          <button
+            className="btn btn-primary relation-cta"
+            type="button"
+            disabled={!relationFromStation || !relationToStation}
+            onClick={() => setRelationModalOpen(true)}
+          >
+            Compare Relation
+          </button>
+        </div>
+        </div>
+        
+      </div>
+    </section>
+  );
+
+  useEffect(() => {
+    if (typeof document === 'undefined') return;
+    setStationToolsContainer(document.getElementById('station-tools-slot'));
+  }, []);
+
+  useEffect(() => {
+    appliedFiltersRef.current = initialFilters || {};
+  }, [initialFilters]);
+
+  const stationToolsContent = stationToolsContainer
+    ? createPortal(stationTools, stationToolsContainer)
+    : null;
+
   return (
     <div className="filters">
       <div className="filters-header">
-        <h2>Filters {activeFilterCount > 0 && <span className="filter-badge">{activeFilterCount}</span>}</h2>
+        {/* <h2>Filters {activeFilterCount > 0 && <span className="filter-badge">{activeFilterCount}</span>}</h2> */}
       </div>
 
       <section className="filters-section upload-section">
@@ -981,6 +1280,10 @@ const Filters = ({ onChange, onDatasetApplied, initialFilters = {} }) => {
 
       <section className="filters-section">
         <div className="filters-main-panel">
+          <div className="filters-panel-header">
+            <div className="filters-panel-title">🔎 Filters</div>
+            <div className="filters-panel-subtitle">Control date range, companies, regions, and stations.</div>
+          </div>
           {activeFilterCount > 0 && (
             <div className="active-filters-summary">
               <strong>Active Filters:</strong>
@@ -999,14 +1302,9 @@ const Filters = ({ onChange, onDatasetApplied, initialFilters = {} }) => {
                   🗺️ {regions.length} {regions.length === 1 ? 'region' : 'regions'}
                 </span>
               )}
-              {selectedStations.length > 0 && (
-                <span className="filter-tag">
-                  🚉 {selectedStations.length} {selectedStations.length === 1 ? 'station' : 'stations'}
-                </span>
-              )}
             </div>
           )}
-
+          
           {/* Date Range */}
           <div className="filters-subsection">
             <h3>📅 Date Range</h3>
@@ -1040,222 +1338,7 @@ const Filters = ({ onChange, onDatasetApplied, initialFilters = {} }) => {
             )}
           </div>
 
-          {/* Station Search */}
-          <div className="filters-subsection">
-            <h3>🚉 Station</h3>
-            <div className="station-search">
-              {/* Selected stations as chips */}
-              <div className="selected-stations-chips">
-                {selectedStations.map((s) => (
-                  <span className="station-chip" key={s.code}>
-                    {s.name}
-                    {s.regionName ? <span className="station-region"> — {s.regionName}</span> : null}
-                    {s.code && <span className="station-code">{s.code}</span>}
-                    <button className="remove-chip" onClick={() => removeSelectedStation(s.code)} title="Remove">×</button>
-                  </span>
-                ))}
-              </div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                <input
-                  type="text"
-                  placeholder="Type station name (e.g., Milano Centrale)"
-                  value={stationQuery}
-                  onChange={(e) => {
-                    setStationQuery(e.target.value);
-                    setDropdownOpen(true);
-                  }}
-                  autoComplete="off"
-                  onFocus={() => setDropdownOpen(true)}
-                  onBlur={() => setTimeout(() => {
-                    if (!mouseOverSuggestions && !mouseDownOnSuggestions.current) setDropdownOpen(false);
-                  }, 150)}
-                  style={{ flex: 1 }}
-                />
-                {stationQuery && (
-                  <button
-                    className="remove-chip"
-                    style={{ fontSize: 18, marginLeft: 0, marginRight: 2, padding: '0 6px' }}
-                    onClick={() => setStationQuery('')}
-                    title="Clear search"
-                    tabIndex={-1}
-                  >×</button>
-                )}
-              </div>
-              {(dropdownOpen && (stationLoading || stationSuggestions.length > 0)) && (
-                <div
-                  className="station-suggestions improved-scroll"
-                  onMouseEnter={() => setMouseOverSuggestions(true)}
-                  onMouseLeave={() => setMouseOverSuggestions(false)}
-                  onMouseDown={() => { mouseDownOnSuggestions.current = true; }}
-                  onMouseUp={() => { setTimeout(() => { mouseDownOnSuggestions.current = false; }, 0); }}
-                >
-                  {stationLoading && (
-                    <div className="station-suggestion muted">Searching…</div>
-                  )}
-                  {!stationLoading && stationSuggestions.length === 0 && (
-                    <div className="station-suggestion muted">No matches</div>
-                  )}
-                  {!stationLoading && stationSuggestions.map((s) => {
-                    const isSelected = selectedStations.some(sel => sel.code === s.code);
-                    return (
-                      <label
-                        key={`${s.code || ''}-${s.name}-${s.region || ''}-${s.regionName || ''}`}
-                        className={`station-suggestion${isSelected ? ' selected' : ''}`}
-                        style={{ cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 8 }}
-                        onMouseDown={e => e.preventDefault()}
-                      >
-                        <input
-                          type="checkbox"
-                          checked={isSelected}
-                          onChange={() => {
-                            if (isSelected) {
-                              removeSelectedStation(s.code);
-                            } else {
-                              selectStation(s);
-                            }
-                          }}
-                          style={{ marginRight: 8 }}
-                          tabIndex={-1}
-                        />
-                        <span className="station-name"><b>{s.name}</b></span>
-                        {s.regionName ? <span className="station-region"> — {s.regionName}</span> : null}
-                        {s.code && <span className="station-code">{s.code}</span>}
-                      </label>
-                    );
-                  })}
-                </div>
-              )}
-            </div>
-          </div>
-
-          {/* Station Relation */}
-          <div className="filters-subsection">
-            <h3>🔁 Station Relation</h3>
-            <p className="relation-hint">
-              Compare train counts and details between two stations. Select departure and destination to load relation data, then click "Compare Relation" to view results.
-            </p>
-            <div className="relation-grid">
-              <div className="relation-input">
-                <label>Departure</label>
-                <div className="relation-search">
-                  <input
-                    type="text"
-                    placeholder="Type origin station (e.g., Pisa Centrale)"
-                    value={relationFromQuery}
-                    onChange={(e) => {
-                      setRelationFromQuery(e.target.value);
-                      setRelationFromStation(null);
-                      setRelationFrom(e.target.value);
-                      setRelationFromOpen(true);
-                    }}
-                    autoComplete="off"
-                    onFocus={() => setRelationFromOpen(true)}
-                    onBlur={() => setTimeout(() => {
-                      if (!relationFromMouseDown.current) setRelationFromOpen(false);
-                    }, 150)}
-                  />
-                  {(relationFromOpen && (relationFromLoading || relationFromSuggestions.length > 0)) && (
-                    <div
-                      className="station-suggestions improved-scroll"
-                      onMouseDown={() => { relationFromMouseDown.current = true; }}
-                      onMouseUp={() => { setTimeout(() => { relationFromMouseDown.current = false; }, 0); }}
-                    >
-                      {relationFromLoading && (
-                        <div className="station-suggestion muted">Searching…</div>
-                      )}
-                      {!relationFromLoading && relationFromSuggestions.length === 0 && (
-                        <div className="station-suggestion muted">No matches</div>
-                      )}
-                      {!relationFromLoading && relationFromSuggestions.map((s) => (
-                        <button
-                          type="button"
-                          key={`${s.code || ''}-${s.name}-${s.region || ''}-${s.regionName || ''}`}
-                          className="station-suggestion relation-suggestion"
-                          onMouseDown={(e) => e.preventDefault()}
-                          onClick={() => {
-                            setRelationFromStation(s);
-                            setRelationFromQuery(s.name);
-                            setRelationFrom(s.name);
-                            setRelationToStation(null);
-                            setRelationToQuery('');
-                            setRelationTo('');
-                            setRelationFromOpen(false);
-                          }}
-                        >
-                          <span className="station-name"><b>{s.name}</b></span>
-                          {s.regionName ? <span className="station-region"> — {s.regionName}</span> : null}
-                          {s.code && <span className="station-code">{s.code}</span>}
-                        </button>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              </div>
-              <div className="relation-input">
-                <label>Destination</label>
-                <div className="relation-search">
-                  <input
-                    type="text"
-                    placeholder="Type destination station (e.g., Roma Termini)"
-                    value={relationToQuery}
-                    onChange={(e) => {
-                      setRelationToQuery(e.target.value);
-                      setRelationToStation(null);
-                      setRelationTo(e.target.value);
-                      setRelationToOpen(true);
-                    }}
-                    autoComplete="off"
-                    onFocus={() => setRelationToOpen(true)}
-                    onBlur={() => setTimeout(() => {
-                      if (!relationToMouseDown.current) setRelationToOpen(false);
-                    }, 150)}
-                  />
-                  {(relationToOpen && (relationToLoading || relationToSuggestions.length > 0)) && (
-                    <div
-                      className="station-suggestions improved-scroll"
-                      onMouseDown={() => { relationToMouseDown.current = true; }}
-                      onMouseUp={() => { setTimeout(() => { relationToMouseDown.current = false; }, 0); }}
-                    >
-                      {relationToLoading && (
-                        <div className="station-suggestion muted">Searching…</div>
-                      )}
-                      {!relationToLoading && relationToSuggestions.length === 0 && (
-                        <div className="station-suggestion muted">No matches</div>
-                      )}
-                      {!relationToLoading && relationToSuggestions.map((s) => (
-                        <button
-                          type="button"
-                          key={`${s.code || ''}-${s.name}-${s.region || ''}-${s.regionName || ''}`}
-                          className="station-suggestion relation-suggestion"
-                          onMouseDown={(e) => e.preventDefault()}
-                          onClick={() => {
-                            setRelationToStation(s);
-                            setRelationToQuery(s.name);
-                            setRelationTo(s.name);
-                            setRelationToOpen(false);
-                          }}
-                        >
-                          <span className="station-name"><b>{s.name}</b></span>
-                          {s.regionName ? <span className="station-region"> — {s.regionName}</span> : null}
-                          {s.code && <span className="station-code">{s.code}</span>}
-                        </button>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              </div>
-            </div>
-            <div className="relation-actions">
-              <button
-                className="btn btn-primary relation-cta"
-                type="button"
-                disabled={!relationFromStation || !relationToStation}
-                onClick={() => setRelationModalOpen(true)}
-              >
-                Compare Relation
-              </button>
-            </div>
-          </div>
+          {stationToolsContent}
 
           {/* Companies */}
           <div className="filters-subsection">

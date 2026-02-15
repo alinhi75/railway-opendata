@@ -123,22 +123,7 @@ const ClearSelectionOnMapClick = ({ enabled }) => {
   return null;
 };
 
-const ClearSelectionOnPopupClose = ({ enabled }) => {
-  useMapEvents({
-    popupclose: (e) => {
-      if (!enabled) return;
-      const source = e?.popup?._source;
-      const iconEl = source?._icon;
-      // Only clear when the popup being closed belongs to the selected marker.
-      if (!iconEl?.classList?.contains('selected-station-icon')) return;
-
-      _clearStationCodeFromUrl();
-      window.dispatchEvent(new CustomEvent('stationCleared'));
-    },
-  });
-
-  return null;
-};
+const ClearSelectionOnPopupClose = () => null;
 
 function _normalizeRegionKey(value) {
   return String(value || '')
@@ -353,7 +338,8 @@ const MapSection = ({ filters = {}, datasetVersion = 0 }) => {
     return merged;
   }, [regionFeatureGroups]);
 
-  const showRegionPolygons = regionFeatureGroups.length > 0;
+  const showRegionPolygons = regionFeatureGroups.length > 0 && selectedStationFeatures.length === 0;
+  const showAllStations = selectedStationFeatures.length === 0;
 
   return (
     <div className="map-page">
@@ -371,7 +357,7 @@ const MapSection = ({ filters = {}, datasetVersion = 0 }) => {
         <div className="map-card">
           <MapContainer center={ITALY_CENTER} zoom={6} scrollWheelZoom className="leaflet-map">
             <ClearSelectionOnMapClick enabled={selectedStationFeatures.length > 0} />
-            <ClearSelectionOnPopupClose enabled={selectedStationFeatures.length > 0} />
+            <ClearSelectionOnPopupClose />
             <TileLayer attribution='&copy; OpenStreetMap contributors' url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
 
             {selectedStationFeatures.map((f) => {
@@ -386,10 +372,6 @@ const MapSection = ({ filters = {}, datasetVersion = 0 }) => {
                     add: (e) => {
                       // Auto-open popup when marker is added
                       setTimeout(() => e.target.openPopup(), 400);
-                    },
-                    popupclose: () => {
-                      _clearStationCodeFromUrl();
-                      window.dispatchEvent(new CustomEvent('stationCleared'));
                     }
                   }}
                 >
@@ -405,7 +387,7 @@ const MapSection = ({ filters = {}, datasetVersion = 0 }) => {
               );
             })}
 
-            {stationsFc && (
+            {stationsFc && showAllStations && (
               <GeoJSON
                 data={stationsFc}
                 pointToLayer={(feature, latlng) => {

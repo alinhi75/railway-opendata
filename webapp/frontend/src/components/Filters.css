@@ -538,6 +538,28 @@
   margin-right: auto;
 }
 
+.station-tools-slot {
+  margin: 0 0 14px;
+}
+
+.station-tools-panel {
+  display: grid;
+  gap: 16px;
+}
+
+.station-active-summary {
+  margin-bottom: 4px;
+}
+
+.station-tools-actions {
+  justify-content: center;
+  margin-top: 10px;
+}
+
+.station-search .filters-actions {
+  margin-top: 10px;
+}
+
 .filters-main-panel {
   background: #f9fafb;
   border: 1px solid #e5e7eb;
@@ -545,6 +567,22 @@
   padding: 20px 16px 16px;
   display: grid;
   gap: 16px;
+}
+
+.filters-panel-header {
+  display: grid;
+  gap: 4px;
+}
+
+.filters-panel-title {
+  font-size: 15px;
+  font-weight: 700;
+  color: #1f2937;
+}
+
+.filters-panel-subtitle {
+  font-size: 12.5px;
+  color: #6b7280;
 }
 
 .filters-subsection {
@@ -575,7 +613,7 @@
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
   column-gap: 24px;
-  row-gap: 10px;
+  row-gap: 14px;
   margin-bottom: 8px;
   width: 100%;
 }

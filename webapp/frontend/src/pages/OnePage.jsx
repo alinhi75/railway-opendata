@@ -94,12 +94,6 @@ const OnePage = () => {
     <div className="onepage" id="top">
       <section id="map" className="onepage-section">
         <div className="onepage-container">
-          <div className="dashboard-header">
-            <div className="header-content">
-              <h1>🗺️ Station Map</h1>
-              <p className="header-subtitle">Explore stations across Italy</p>
-            </div>
-          </div>
 
           <div className="map-section-content">
             <Filters
@@ -107,6 +101,7 @@ const OnePage = () => {
               onDatasetApplied={() => setDatasetVersion((v) => v + 1)}
               initialFilters={initialFiltersFromUrl}
             />
+            <div id="station-tools-slot" className="station-tools-slot"></div>
             <MapSection filters={appliedFilters} datasetVersion={datasetVersion} />
           </div>
         </div>
