@@ -37,6 +37,11 @@ const Filters = ({ onChange, onDatasetApplied, initialFilters = {} }) => {
   const [relationResults, setRelationResults] = useState([]);
   const [relationLoading, setRelationLoading] = useState(false);
   const [relationError, setRelationError] = useState(null);
+  const [selectedRelationIndex, setSelectedRelationIndex] = useState(null);
+  const [relationDetail, setRelationDetail] = useState(null);
+  const [relationDetailLoading, setRelationDetailLoading] = useState(false);
+  const [relationDetailError, setRelationDetailError] = useState(null);
+  const [relationDetailModalOpen, setRelationDetailModalOpen] = useState(false);
   const relationFromMouseDown = useRef(false);
   const relationToMouseDown = useRef(false);
 
@@ -427,8 +432,31 @@ const Filters = ({ onChange, onDatasetApplied, initialFilters = {} }) => {
     setUploadModalOpen(false);
   };
 
+  const resetRelationInputs = () => {
+    setRelationFromStation(null);
+    setRelationToStation(null);
+    setRelationFromQuery('');
+    setRelationToQuery('');
+    setRelationFrom('');
+    setRelationTo('');
+    setRelationFromOpen(false);
+    setRelationToOpen(false);
+    setRelationResults([]);
+    setRelationError(null);
+  };
+
   const closeRelationModal = () => {
     setRelationModalOpen(false);
+    setSelectedRelationIndex(null);
+    setRelationDetail(null);
+    setRelationDetailError(null);
+    resetRelationInputs();
+  };
+
+  const closeRelationDetailModal = () => {
+    setRelationDetailModalOpen(false);
+    setRelationDetail(null);
+    setRelationDetailError(null);
   };
 
   const fetchRelationData = async () => {
@@ -441,6 +469,7 @@ const Filters = ({ onChange, onDatasetApplied, initialFilters = {} }) => {
     try {
       setRelationLoading(true);
       setRelationError(null);
+      setSelectedRelationIndex(null);
       const res = await apiService.getExternalRelation(fromName, toName);
       setRelationResults(res?.data?.rows || []);
     } catch (err) {
@@ -461,6 +490,42 @@ const Filters = ({ onChange, onDatasetApplied, initialFilters = {} }) => {
     if (!relationModalOpen) return;
     fetchRelationData();
   }, [relationModalOpen, relationFromStation, relationToStation]);
+
+  useEffect(() => {
+    setSelectedRelationIndex(null);
+    setRelationDetail(null);
+    setRelationDetailError(null);
+  }, [relationResults]);
+
+  const fetchRelationTrainDetail = async (row, idx) => {
+    setSelectedRelationIndex(idx);
+    setRelationDetail(null);
+    setRelationDetailError(null);
+    setRelationModalOpen(false);
+    setRelationDetailModalOpen(true);
+
+    if (!row?.train_number || !row.origin || !row.destination || !row.origin_time || !row.destination_time) {
+      setRelationDetailError('Missing train detail parameters for this row.');
+      return;
+    }
+
+    try {
+      setRelationDetailLoading(true);
+      const res = await apiService.getExternalTrainDetail({
+        ref: 'cr',
+        treno: row.train_number,
+        stazpart: row.origin,
+        stazarr: row.destination,
+        op: row.origin_time,
+        oa: row.destination_time,
+      });
+      setRelationDetail(res?.data || null);
+    } catch (err) {
+      setRelationDetailError('Failed to load train detail. Please try again.');
+    } finally {
+      setRelationDetailLoading(false);
+    }
+  };
 
   const handleDeleteArchive = () => {
     if (!selectedArchive || selectedArchiveInfo?.is_default || selectedArchiveInfo?.is_current) return;
@@ -517,16 +582,122 @@ const Filters = ({ onChange, onDatasetApplied, initialFilters = {} }) => {
     selectedStations.length > 0 || stationQuery,
   ].filter(Boolean).length;
 
+  const selectedRelationRow = selectedRelationIndex !== null
+    ? relationResults[selectedRelationIndex]
+    : null;
+
+  const renderKeyValueGrid = (data, emptyLabel = 'No data available.') => {
+    if (!data || Object.keys(data).length === 0) {
+      return <div className="relation-detail-empty">{emptyLabel}</div>;
+    }
+
+    return (
+      <div className="detail-kv-grid">
+        {Object.entries(data).map(([key, value]) => (
+          <div className="detail-kv" key={key}>
+            <span className="detail-kv-label">{key}</span>
+            <span className="detail-kv-value">{value || '—'}</span>
+          </div>
+        ))}
+      </div>
+    );
+  };
+
+  const parseCount = (value) => {
+    if (value === null || value === undefined) return 0;
+    const num = String(value).replace(/[^0-9-]/g, '');
+    const parsed = Number(num);
+    return Number.isFinite(parsed) ? parsed : 0;
+  };
+
+  const getStatValue = (stats, keys = []) => {
+    if (!stats) return 0;
+    const entries = Object.entries(stats);
+    for (const key of keys) {
+      const match = entries.find(([k]) => k.trim().toLowerCase() === key);
+      if (match) return parseCount(match[1]);
+    }
+    return 0;
+  };
+
+  const mapWeekdayToEnglish = (value) => {
+    if (!value) return value;
+    const normalized = value
+      .toString()
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .trim()
+      .toLowerCase();
+
+    const mapping = {
+      lunedi: 'Monday',
+      martedi: 'Tuesday',
+      mercoledi: 'Wednesday',
+      giovedi: 'Thursday',
+      venerdi: 'Friday',
+      sabato: 'Saturday',
+      domenica: 'Sunday',
+      generale: 'Overall',
+    };
+
+    return mapping[normalized] || value;
+  };
+
+  const renderDonutChart = (title, items, totalOverride = null) => {
+    const total = totalOverride ?? items.reduce((sum, item) => sum + item.value, 0);
+    const safeTotal = total > 0 ? total : 1;
+    let offset = 0;
+
+    return (
+      <div className="detail-chart-card">
+        <div className="detail-card-title">{title}</div>
+        <div className="detail-chart-body">
+          <div className="detail-donut">
+            <svg viewBox="0 0 36 36">
+              <circle className="detail-donut-track" cx="18" cy="18" r="15.5" />
+              {items.map((item) => {
+                const pct = total > 0 ? (item.value / safeTotal) * 100 : 0;
+                const dash = `${pct} ${100 - pct}`;
+                const strokeDasharray = dash;
+                const strokeDashoffset = 25 - offset;
+                offset += pct;
+                return (
+                  <circle
+                    key={item.label}
+                    className="detail-donut-segment"
+                    cx="18"
+                    cy="18"
+                    r="15.5"
+                    strokeDasharray={strokeDasharray}
+                    strokeDashoffset={strokeDashoffset}
+                    style={{ stroke: item.color }}
+                  />
+                );
+              })}
+            </svg>
+            <div className="detail-donut-center">
+              <div className="detail-donut-total">{total > 0 ? total : '—'}</div>
+              <div className="detail-donut-label">Totali</div>
+            </div>
+          </div>
+          <div className="detail-legend">
+            {items.map((item) => (
+              <div className="detail-legend-item" key={item.label}>
+                <span className="detail-legend-dot" style={{ background: item.color }}></span>
+                <span className="detail-legend-text">{item.label}</span>
+                <span className="detail-legend-value">{item.value}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+    );
+  };
+
   return (
     <div className="filters">
       <div className="filters-header">
         <h2>Filters {activeFilterCount > 0 && <span className="filter-badge">{activeFilterCount}</span>}</h2>
-        <div className="actions">
-          <button className="btn btn-secondary" onClick={clearFilters} disabled={activeFilterCount === 0}>Clear All</button>
-          <button className="btn btn-primary" onClick={applyFilters} disabled={Boolean(dateRangeError)}>
-            Apply Filters
-          </button>
-        </div>
       </div>
 
       <section className="filters-section upload-section">
@@ -813,6 +984,11 @@ const Filters = ({ onChange, onDatasetApplied, initialFilters = {} }) => {
           {activeFilterCount > 0 && (
             <div className="active-filters-summary">
               <strong>Active Filters:</strong>
+              {(startDate || endDate) && (
+                <span className="filter-tag">
+                  📅 {startDate || '—'} → {endDate || '—'}
+                </span>
+              )}
               {companies.length > 0 && (
                 <span className="filter-tag">
                   🏢 {companies.length} {companies.length === 1 ? 'company' : 'companies'}
@@ -956,7 +1132,7 @@ const Filters = ({ onChange, onDatasetApplied, initialFilters = {} }) => {
           <div className="filters-subsection">
             <h3>🔁 Station Relation</h3>
             <p className="relation-hint">
-              Compare departures between two stations. The full relation analysis will be enabled once backend support is ready.
+              Compare train counts and details between two stations. Select departure and destination to load relation data, then click "Compare Relation" to view results.
             </p>
             <div className="relation-grid">
               <div className="relation-input">
@@ -1114,6 +1290,13 @@ const Filters = ({ onChange, onDatasetApplied, initialFilters = {} }) => {
               ))}
             </div>
           </div>
+
+          <div className="filters-actions actions">
+            <button className="btn btn-secondary" onClick={clearFilters} disabled={activeFilterCount === 0}>Clear All</button>
+            <button className="btn btn-primary" onClick={applyFilters} disabled={Boolean(dateRangeError)}>
+              Apply Filters
+            </button>
+          </div>
         </div>
       </section>
 
@@ -1167,7 +1350,7 @@ const Filters = ({ onChange, onDatasetApplied, initialFilters = {} }) => {
             onClick={closeRelationModal}
           ></div>
           <div
-            className="modal-dialog relation-modal"
+            className={`modal-dialog relation-modal${relationResults.length > 0 && !relationLoading ? ' is-loaded' : ''}`}
             role="dialog"
             aria-modal="true"
             aria-labelledby="relation-modal-title"
@@ -1198,48 +1381,57 @@ const Filters = ({ onChange, onDatasetApplied, initialFilters = {} }) => {
                   </div>
                 </div>
                 <div className="relation-modal-body">
-                  {relationLoading ? (
-                    <div className="relation-modal-note">Loading relation data…</div>
-                  ) : relationError ? (
-                    <div className="relation-modal-note relation-modal-error">{relationError}</div>
-                  ) : relationResults.length === 0 ? (
-                    <div className="relation-modal-note">No relation data available yet.</div>
-                  ) : (
-                    <div className="relation-table-wrap">
-                      <table className="relation-table">
-                        <thead>
-                          <tr>
-                            <th>Category</th>
-                            <th>Train</th>
-                            <th>Departure</th>
-                            <th>Dep. Time</th>
-                            <th>Dep. Delay</th>
-                            <th>Destination</th>
-                            <th>Arr. Time</th>
-                            <th>Arr. Delay</th>
-                            <th>Track</th>
-                            <th>Last Seen</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {relationResults.map((row, idx) => (
-                            <tr key={`${row.train_number || 'train'}-${idx}`}>
-                              <td>{row.category || '—'}</td>
-                              <td>{row.train_number || '—'}</td>
-                              <td>{row.origin || '—'}</td>
-                              <td>{row.origin_time || '—'}</td>
-                              <td>{row.origin_delay || '—'}</td>
-                              <td>{row.destination || '—'}</td>
-                              <td>{row.destination_time || '—'}</td>
-                              <td>{row.destination_delay || '—'}</td>
-                              <td>{row.track || '—'}</td>
-                              <td>{row.date || '—'}</td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
+                  <div className="relation-modal-layout">
+                    <div className="relation-modal-list">
+                      {relationLoading ? (
+                        <div className="relation-modal-note">Loading relation data…</div>
+                      ) : relationError ? (
+                        <div className="relation-modal-note relation-modal-error">{relationError}</div>
+                      ) : relationResults.length === 0 ? (
+                        <div className="relation-modal-note">No relation data available yet.</div>
+                      ) : (
+                        <div className="relation-table-wrap">
+                          <div className="relation-table-hint">Click a row to load train details.</div>
+                          <table className="relation-table">
+                            <thead>
+                              <tr>
+                                <th>Category</th>
+                                <th>Train</th>
+                                <th>Departure</th>
+                                <th>Dep. Time</th>
+                                <th>Dep. Delay</th>
+                                <th>Destination</th>
+                                <th>Arr. Time</th>
+                                <th>Arr. Delay</th>
+                                <th>Track</th>
+                                <th>Last Seen</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {relationResults.map((row, idx) => (
+                                <tr
+                                  key={`${row.train_number || 'train'}-${idx}`}
+                                  className={selectedRelationIndex === idx ? 'is-selected' : ''}
+                                  onClick={() => fetchRelationTrainDetail(row, idx)}
+                                >
+                                  <td>{row.category || '—'}</td>
+                                  <td>{row.train_number || '—'}</td>
+                                  <td>{row.origin || '—'}</td>
+                                  <td>{row.origin_time || '—'}</td>
+                                  <td>{row.origin_delay || '—'}</td>
+                                  <td>{row.destination || '—'}</td>
+                                  <td>{row.destination_time || '—'}</td>
+                                  <td>{row.destination_delay || '—'}</td>
+                                  <td>{row.track || '—'}</td>
+                                  <td>{row.date || '—'}</td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      )}
                     </div>
-                  )}
+                  </div>
                 </div>
               </div>
               <div className="modal-footer">
@@ -1255,6 +1447,218 @@ const Filters = ({ onChange, onDatasetApplied, initialFilters = {} }) => {
                   onClick={fetchRelationData}
                 >
                   {relationLoading ? 'Loading…' : 'Run Comparison'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </>
+      )}
+
+      {relationDetailModalOpen && (
+        <>
+          <div
+            className="modal-overlay"
+            role="presentation"
+            onClick={closeRelationDetailModal}
+          ></div>
+          <div
+            className="modal-dialog relation-detail-modal"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="relation-detail-modal-title"
+          >
+            <div className="modal-content">
+              <div className="modal-header">
+                <div className="modal-title-icon">🚆</div>
+                <div>
+                  <h3 className="modal-title" id="relation-detail-modal-title">Train Detail</h3>
+                  <p className="modal-subtitle">Detailed performance for the selected train.</p>
+                </div>
+              </div>
+              <div className="modal-body">
+                <div className="relation-detail-card">
+                  <div className="detail-card-title">Selected train</div>
+                  {selectedRelationRow ? (
+                    <div className="detail-summary">
+                      <div>
+                        <span className="detail-summary-label">Train</span>
+                        <span className="detail-summary-value">{selectedRelationRow.train_number || '—'}</span>
+                      </div>
+                      <div>
+                        <span className="detail-summary-label">Route</span>
+                        <span className="detail-summary-value">
+                          {selectedRelationRow.origin || '—'} → {selectedRelationRow.destination || '—'}
+                        </span>
+                      </div>
+                      <div>
+                        <span className="detail-summary-label">Times</span>
+                        <span className="detail-summary-value">
+                          {selectedRelationRow.origin_time || '—'} → {selectedRelationRow.destination_time || '—'}
+                        </span>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="relation-detail-empty">No train selected.</div>
+                  )}
+                </div>
+
+                {selectedRelationRow && (
+                  <a
+                    className="relation-detail-link"
+                    href={`https://trainstats.altervista.org/cercatreno.php?ref=cr&treno=${encodeURIComponent(selectedRelationRow.train_number || '')}&stazpart=${encodeURIComponent(selectedRelationRow.origin || '')}&stazarr=${encodeURIComponent(selectedRelationRow.destination || '')}&op=${encodeURIComponent(selectedRelationRow.origin_time || '')}&oa=${encodeURIComponent(selectedRelationRow.destination_time || '')}`}
+                    target="_blank"
+                    rel="noreferrer"
+                  >
+                    {/* add divider  */}
+                    <div className="relation-detail-link-divider">
+                      
+                    </div>
+                    {/* Open on TrainStats ↗ */}
+                  </a>
+                )}
+
+                {selectedRelationRow && relationDetailLoading && (
+                  <div className="relation-detail-note">Loading train detail…</div>
+                )}
+                {selectedRelationRow && relationDetailError && (
+                  <div className="relation-detail-note relation-modal-error">{relationDetailError}</div>
+                )}
+                {selectedRelationRow && !relationDetailLoading && !relationDetailError && relationDetail && (
+                  <div className="relation-detail-grid">
+                    <div className="detail-chart-grid">
+                      {renderDonutChart('Regularity', [
+                        {
+                          label: 'Regolari',
+                          value: getStatValue(relationDetail.regularity, ['regolari']),
+                          color: '#38bdf8',
+                        },
+                        {
+                          label: 'Riprogrammati',
+                          value: getStatValue(relationDetail.regularity, ['riprogrammati']),
+                          color: '#fbbf24',
+                        },
+                        {
+                          label: 'Cancellati',
+                          value: getStatValue(relationDetail.regularity, ['cancellati']),
+                          color: '#f87171',
+                        },
+                      ], getStatValue(relationDetail.regularity, ['totali', 'totale']))}
+
+                      {renderDonutChart('Departure punctuality', [
+                        {
+                          label: 'In orario',
+                          value: getStatValue(relationDetail.punctuality_departure, ['in orario']),
+                          color: '#38bdf8',
+                        },
+                        {
+                          label: 'In ritardo',
+                          value: getStatValue(relationDetail.punctuality_departure, ['in ritardo']),
+                          color: '#f87171',
+                        },
+                      ])}
+
+                      {renderDonutChart('Arrival punctuality', [
+                        {
+                          label: 'In anticipo',
+                          value: getStatValue(relationDetail.punctuality_arrival, ['in anticipo']),
+                          color: '#34d399',
+                        },
+                        {
+                          label: 'In orario',
+                          value: getStatValue(relationDetail.punctuality_arrival, ['in orario']),
+                          color: '#38bdf8',
+                        },
+                        {
+                          label: 'In ritardo',
+                          value: getStatValue(relationDetail.punctuality_arrival, ['in ritardo']),
+                          color: '#f87171',
+                        },
+                      ])}
+                    </div>
+
+                    {relationDetail.average_delay_by_day?.length > 0 && (
+                      <div className="relation-detail-card detail-table-card">
+                        <div className="detail-card-title">Average delay by day</div>
+                        <div className="detail-table-wrap">
+                          <table className="detail-table">
+                            <thead>
+                              <tr>
+                                <th>Day</th>
+                                <th>Departure</th>
+                                <th>Arrival</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {relationDetail.average_delay_by_day.map((row, idx) => (
+                                <tr key={`${row.day}-${idx}`}>
+                                  <td>{mapWeekdayToEnglish(row.day) || '—'}</td>
+                                  <td>{row.departure || '—'}</td>
+                                  <td>{row.arrival || '—'}</td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      </div>
+                    )}
+
+                    {relationDetail.daily_records?.length > 0 && (
+                      <div className="relation-detail-card detail-table-card detail-table-wide">
+                        <div className="detail-card-title">Daily data</div>
+                        <div className="detail-table-wrap">
+                          <table className="detail-table">
+                            <thead>
+                              <tr>
+                                <th>Day</th>
+                                <th>Date</th>
+                                <th>Departure</th>
+                                <th>Dep. Time</th>
+                                <th>Dep. Delay</th>
+                                <th>Arrival</th>
+                                <th>Arr. Time</th>
+                                <th>Arr. Delay</th>
+                                <th>Actions</th>
+                                <th>Notes</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {relationDetail.daily_records.map((row, idx) => (
+                                <tr key={`${row.date}-${idx}`}>
+                                  <td>{mapWeekdayToEnglish(row.day) || '—'}</td>
+                                  <td>{row.date || '—'}</td>
+                                  <td>{row.origin || '—'}</td>
+                                  <td>{row.origin_time || '—'}</td>
+                                  <td>{row.origin_delay || '—'}</td>
+                                  <td>{row.destination || '—'}</td>
+                                  <td>{row.destination_time || '—'}</td>
+                                  <td>{row.destination_delay || '—'}</td>
+                                  <td>{row.actions || '—'}</td>
+                                  <td>{row.notes || '—'}</td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+              <div className="modal-footer">
+                <button
+                  className="btn btn-secondary"
+                  onClick={() => {
+                    closeRelationDetailModal();
+                    setRelationModalOpen(true);
+                  }}
+                >
+                  Back to results
+                </button>
+                <button
+                  className="btn btn-primary"
+                  onClick={closeRelationDetailModal}
+                >
+                  Close
                 </button>
               </div>
             </div>
