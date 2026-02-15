@@ -351,52 +351,6 @@ const StatisticsSection = ({ filters = {}, datasetVersion = 0 }) => {
 
       {viewMode === 'custom' && (customAvailableRange || selectedStatsRange) && (
         <div className="range-banner">
-          <div className="range-controls">
-            <div className="range-controls-title">📅 Statistics date range</div>
-            <div className="range-controls-grid">
-              <div className="range-control">
-                <label htmlFor="stats-custom-start">Start</label>
-                <div className="range-control-input" onClick={() => openNativeDatePicker(customStartInputRef.current)}>
-                  <span className="range-control-icon" aria-hidden="true">📅</span>
-                  <input
-                    id="stats-custom-start"
-                    type="date"
-                    ref={customStartInputRef}
-                    value={customStartDate}
-                    min={customAvailableRange?.start || undefined}
-                    max={customEndDate || customAvailableRange?.end || undefined}
-                    onChange={(e) => setCustomStartDate(e.target.value)}
-                    onClick={() => openNativeDatePicker(customStartInputRef.current)}
-                    onFocus={() => openNativeDatePicker(customStartInputRef.current)}
-                  />
-                </div>
-              </div>
-              <div className="range-controls-sep" aria-hidden="true">→</div>
-              <div className="range-control">
-                <label htmlFor="stats-custom-end">End</label>
-                <div className="range-control-input" onClick={() => openNativeDatePicker(customEndInputRef.current)}>
-                  <span className="range-control-icon" aria-hidden="true">📅</span>
-                  <input
-                    id="stats-custom-end"
-                    type="date"
-                    ref={customEndInputRef}
-                    value={customEndDate}
-                    min={customStartDate || customAvailableRange?.start || undefined}
-                    max={customAvailableRange?.end || undefined}
-                    onChange={(e) => setCustomEndDate(e.target.value)}
-                    onClick={() => openNativeDatePicker(customEndInputRef.current)}
-                    onFocus={() => openNativeDatePicker(customEndInputRef.current)}
-                  />
-                </div>
-              </div>
-            </div>
-            {customDateRangeError && (
-              <div className="range-hint">
-                ⚠️ {customDateRangeError} Using {filters.startDate && filters.endDate ? 'the shared filter range' : 'all available dates'} until it’s complete.
-              </div>
-            )}
-          </div>
-
           {customAvailableRange && (
             <div className="range-text">
               Data available: <strong>{customAvailableRange.start}</strong> → <strong>{customAvailableRange.end}</strong>
