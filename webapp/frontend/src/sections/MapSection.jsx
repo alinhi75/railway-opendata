@@ -264,6 +264,35 @@ function AutoFitToRegions({ bounds, enabled }) {
   return null;
 }
 
+function CenterMapButton() {
+  const map = useMap();
+
+  const handleResetMap = () => {
+    // Close any open popups
+    map.closePopup();
+    
+    // Clear station selection
+    _clearStationCodeFromUrl();
+    window.dispatchEvent(new CustomEvent('stationCleared'));
+    
+    // Fly back to Italy center
+    map.flyTo(ITALY_CENTER, 6, { duration: 1.2, easeLinearity: 0.25 });
+  };
+
+  return (
+    <div className="leaflet-center-button-container">
+      <button 
+        className="leaflet-center-button"
+        onClick={handleResetMap}
+        title="Center map on Italy"
+        type="button"
+      >
+        ↩️
+      </button>
+    </div>
+  );
+}
+
 const MapSection = ({ filters = {}, datasetVersion = 0 }) => {
   const [stationsFc, setStationsFc] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -369,7 +398,8 @@ const MapSection = ({ filters = {}, datasetVersion = 0 }) => {
         </div>
       ) : (
         <div className="map-card">
-          <MapContainer center={ITALY_CENTER} zoom={6} scrollWheelZoom className="leaflet-map">
+          <MapContainer id="leaflet-map-container" center={ITALY_CENTER} zoom={6} scrollWheelZoom className="leaflet-map">
+            <CenterMapButton />
             <ClearSelectionOnMapClick enabled={selectedStationFeatures.length > 0} />
             <ClearSelectionOnPopupClose />
             <TileLayer attribution='&copy; OpenStreetMap contributors' url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
