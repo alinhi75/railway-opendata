@@ -48,6 +48,19 @@
   line-height: 1.6;
 }
 
+.dashboard-station-label {
+  display: inline-block;
+  margin: 12px 0;
+  padding: 8px 14px;
+  background: rgba(255, 255, 255, 0.2);
+  border-radius: 8px;
+  font-size: 14px;
+  font-weight: 600;
+  color: #fef3c7;
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  backdrop-filter: blur(10px);
+}
+
 .data-period {
   display: inline-flex;
   align-items: center;
@@ -78,6 +91,30 @@
   display: flex;
   align-items: center;
   gap: 10px;
+}
+
+.section-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 24px;
+  flex-wrap: wrap;
+}
+
+.section-header .section-title {
+  margin: 0;
+}
+
+.section-station-label {
+  font-size: 13px;
+  color: #4f46e5;
+  font-weight: 600;
+  padding: 6px 10px;
+  background: #eef2ff;
+  border-radius: 6px;
+  display: inline-block;
+  white-space: nowrap;
 }
 
 /* Loading State */

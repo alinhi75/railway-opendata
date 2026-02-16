@@ -63,6 +63,15 @@ const OnePage = () => {
           ...prev,
           stationCodes: [stationCode]
         }));
+        
+        // Scroll to leaflet-container when station is selected
+        setTimeout(() => {
+          const mapContainer = document.querySelector('.leaflet-container');
+          if (mapContainer) {
+            const top = mapContainer.getBoundingClientRect().top + window.scrollY - HEADER_OFFSET_PX;
+            window.scrollTo({ top, behavior: 'smooth' });
+          }
+        }, 100);
       }
     };
 
@@ -90,6 +99,28 @@ const OnePage = () => {
     }
   }, [location.hash]);
 
+  const handleFiltersChange = (newFilters) => {
+    setAppliedFilters(newFilters);
+    
+    // Auto-scroll only when regions or stations are selected
+    const hasRegions = Array.isArray(newFilters.regions) && newFilters.regions.length > 0;
+    const hasStations = Array.isArray(newFilters.stationCodes) && newFilters.stationCodes.length > 0;
+    
+    if (hasRegions || hasStations) {
+      // Scroll to the leaflet map container with a small delay to ensure rendering
+      setTimeout(() => {
+        const mapContainer = document.querySelector('.leaflet-container');
+        if (mapContainer) {
+          const top = mapContainer.getBoundingClientRect().top + window.scrollY - HEADER_OFFSET_PX;
+          window.scrollTo({ top, behavior: 'smooth' });
+        } else {
+          // Fallback to ID selector if leaflet-container is not yet rendered
+          scrollToHash('#leaflet-map-container');
+        }
+      }, 100);
+    }
+  };
+
   return (
     <div className="onepage" id="top">
       <section id="map" className="onepage-section">
@@ -97,7 +128,7 @@ const OnePage = () => {
 
           <div className="map-section-content">
             <Filters
-              onChange={setAppliedFilters}
+              onChange={handleFiltersChange}
               onDatasetApplied={() => setDatasetVersion((v) => v + 1)}
               initialFilters={initialFiltersFromUrl}
             />

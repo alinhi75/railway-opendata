@@ -25,6 +25,44 @@
 	height: 600px;
 	border-radius: 12px;
 	overflow: hidden;
+	position: relative;
+}
+
+.leaflet-center-button-container {
+	position: absolute;
+	bottom: 20px;
+	right: 20px;
+	z-index: 400;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+}
+
+.leaflet-center-button {
+	width: 40px;
+	height: 40px;
+	border-radius: 50%;
+	background: white;
+	border: 2px solid #e5e7eb;
+	box-shadow: 0 2px 8px rgba(0, 0, 0, 0.12);
+	cursor: pointer;
+	font-size: 20px;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	transition: all 0.2s ease;
+	padding: 0;
+}
+
+.leaflet-center-button:hover {
+	background: #f9fafb;
+	border-color: #d1d5db;
+	box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+	transform: scale(1.05);
+}
+
+.leaflet-center-button:active {
+	transform: scale(0.95);
 }
 
 /* Prevent Leaflet panes/controls from overlaying sticky headers, but allow popups */

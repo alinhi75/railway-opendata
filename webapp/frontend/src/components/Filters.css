@@ -642,6 +642,12 @@
   margin-bottom: 8px;
   width: 100%;
 }
+.relation-flex {
+  display: flex;
+    justify-content: space-between;
+    align-items: center;
+  margin-bottom: 8px;
+}
 
 .relation-hint {
   margin: 0 0 10px 0;
@@ -651,6 +657,10 @@
   border: 1px dashed #e2e8f0;
   padding: 8px 10px;
   border-radius: 8px;
+}
+
+.relation-input {
+width: 100%;
 }
 
 .relation-input label {
@@ -679,7 +689,7 @@
 
 .relation-search {
   position: relative;
-  width: 100%;
+  width: 90%;
 }
 
 .relation-search .station-suggestions {

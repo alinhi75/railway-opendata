@@ -407,6 +407,9 @@ const StatisticsSection = ({ filters = {}, datasetVersion = 0 }) => {
           <div className="chart-card">
             <div className="chart-header">
               <h2>📉 Delay Distribution</h2>
+              {isStationSpecificAnalysis && stationLabel && (
+                <p className="chart-station-label">📍 Station: {stationLabel}</p>
+              )}
               <p className="chart-description">Delay patterns at last stop for each train. Shows median, quartiles, and outliers.</p>
             </div>
             <div className="chart-content">
@@ -429,6 +432,9 @@ const StatisticsSection = ({ filters = {}, datasetVersion = 0 }) => {
           <div className="chart-card">
             <div className="chart-header">
               <h2>📈 Daily Train Count</h2>
+              {isStationSpecificAnalysis && stationLabel && (
+                <p className="chart-station-label">📍 Station: {stationLabel}</p>
+              )}
               <p className="chart-description">Number of unique trains per day, grouped by railway company.</p>
             </div>
             <div className="chart-content">

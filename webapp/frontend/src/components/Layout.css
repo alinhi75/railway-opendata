@@ -9,12 +9,5 @@
 .main-content {
   flex: 1;
   width: 100%;
-  padding: 40px 20px;
 }
 
-/* Mobile Responsive */
-@media (max-width: 768px) {
-  .main-content {
-    padding: 20px 15px;
-  }
-}

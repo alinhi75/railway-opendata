@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { apiService } from '../services/api';
+import Toast from './Toast';
 import './Filters.css';
 
 /**
@@ -75,6 +76,8 @@ const Filters = ({ onChange, onDatasetApplied, initialFilters = {} }) => {
   const [applyingArchive, setApplyingArchive] = useState(false);
   const [applyArchiveStatus, setApplyArchiveStatus] = useState(null);
   const [uploadModalOpen, setUploadModalOpen] = useState(false);
+  const [toastMessage, setToastMessage] = useState(null);
+  const [toastType, setToastType] = useState('info');
 
   const dateRangeError = useMemo(() => {
     const s = (startDate || '').trim();
@@ -439,22 +442,41 @@ const Filters = ({ onChange, onDatasetApplied, initialFilters = {} }) => {
       const range = res?.data?.precompute_range;
       const stats = res?.data?.upload_stats || {};
       
-      const extra = range
-        ? ` Range: ${range.start_date} → ${range.end_date}${range.clamped_to_max_range ? ' (clamped)' : ''}.`
-        : '';
+      // Show toast message with upload details
+      const toastDetails = [];
+      if (stats.stations_uploaded) {
+        toastDetails.push('Stations updated');
+      }
+      if (stats.train_dates && stats.train_dates.length > 0) {
+        toastDetails.push(`${stats.train_dates.length} date folders added`);
+      }
+      if (range) {
+        toastDetails.push(`Range: ${range.start_date} → ${range.end_date}`);
+      }
+      const toastMsg = toastDetails.length > 0 
+        ? `Dataset uploaded successfully. ${toastDetails.join(' • ')}`
+        : 'Dataset uploaded successfully.';
       
-      setUploadStatus({ type: 'success', message: `✅ Dataset applied successfully${extra ? '.' + extra : ''}` });
-      setUploadStats(stats);
+      setToastMessage(toastMsg);
+      setToastType('success');
+
+      // Reset form and close modal immediately
       setUploadStationsFile(null);
       setUploadZipFile(null);
       setDatasetName('');
+      setUploadStatus(null);
+      setUploadStats(null);
+      setUploadModalOpen(false);
+
+      // Refresh data in background
       await refreshAvailableRange();
       await refreshArchives({ preferCurrent: true });
-      // Trigger map refresh by incrementing dataset version
       onDatasetApplied?.();
     } catch (err) {
       console.error('Upload failed', err);
       setUploadStatus({ type: 'error', message: 'Upload failed. Check backend logs for details.' });
+      setToastMessage('Upload failed. Check the dialog for details.');
+      setToastType('error');
     } finally {
       setUploading(false);
     }
@@ -857,7 +879,7 @@ const Filters = ({ onChange, onDatasetApplied, initialFilters = {} }) => {
         <p className="relation-hint">
           Compare train counts and details between two stations. Select departure and destination to load relation data, then click "Compare Relation" to view results.
         </p>
-        <div className="relation-grid">
+        <div className="relation-flex">
           <div className="relation-input">
             <label>Departure</label>
             <div className="relation-search">
@@ -1752,6 +1774,15 @@ const Filters = ({ onChange, onDatasetApplied, initialFilters = {} }) => {
             </div>
           </div>
         </>
+      )}
+
+      {toastMessage && (
+        <Toast
+          message={toastMessage}
+          type={toastType}
+          onClose={() => setToastMessage(null)}
+          duration={6000}
+        />
       )}
     </div>
   );

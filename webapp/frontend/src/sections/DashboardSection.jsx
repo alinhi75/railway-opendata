@@ -11,6 +11,35 @@ const DashboardSection = ({ filters = {}, datasetVersion = 0 }) => {
   const [stats, setStats] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const [stationDetails, setStationDetails] = useState(null);
+
+  // Extract selected station code from filters
+  const selectedStationCode = Array.isArray(filters.stationCodes)
+    ? (filters.stationCodes.length === 1 ? filters.stationCodes[0] : null)
+    : (filters.stationCode || null);
+
+  // Load station details if a specific station is selected
+  useEffect(() => {
+    if (!selectedStationCode) {
+      setStationDetails(null);
+      return;
+    }
+
+    const fetchStationDetails = async () => {
+      try {
+        const stationsRes = await apiService.getStations({ with_coords_only: true, limit: 0 });
+        const stationFeature = stationsRes.data?.features?.find(
+          (f) => String(f?.properties?.code || '').toLowerCase().trim() === String(selectedStationCode).toLowerCase().trim()
+        );
+        setStationDetails(stationFeature || null);
+      } catch (err) {
+        console.error('Failed to fetch station details:', err);
+        setStationDetails(null);
+      }
+    };
+
+    fetchStationDetails();
+  }, [selectedStationCode]);
 
   const apiParams = useMemo(() => {
     const params = {};
@@ -77,6 +106,15 @@ const DashboardSection = ({ filters = {}, datasetVersion = 0 }) => {
 
   const metric = getMetric();
 
+  const stationLabel =
+    (stationDetails?.properties?.name ||
+      stationDetails?.properties?.long_name ||
+      stationDetails?.properties?.longName ||
+      stationDetails?.properties?.short_name ||
+      stationDetails?.properties?.shortName ||
+      selectedStationCode ||
+      null);
+
   const hasNAValues = () => {
     return (
       metric.mean === 'N/A' ||
@@ -92,7 +130,7 @@ const DashboardSection = ({ filters = {}, datasetVersion = 0 }) => {
       <div className="dashboard-container">
         <div className="dashboard-header">
           <div className="header-content">
-            <h1>📊 Railway Performance Dashboard</h1>
+            <h1>tation📊 Railway Performance Dashboard</h1>
             <p className="header-subtitle">Real-time insights into Italian railway system performance</p>
           </div>
         </div>
@@ -119,7 +157,12 @@ const DashboardSection = ({ filters = {}, datasetVersion = 0 }) => {
               </div>
             )}
             <section className="summary-section">
-              <h2 className="section-title">Key Metrics</h2>
+              <div className="section-header">
+                <h2 className="section-title">Key Metrics</h2>
+                {stationLabel && (
+                  <p className="section-station-label">📍 Station: {stationLabel}</p>
+                )}
+              </div>
               <div className="summary-grid">
                 <SummaryCard title="Total Records" value={formatCount(metric.count)} unit="trains" icon="🚂" color="#667eea" />
                 <SummaryCard title="Average Delay" value={formatNumber(metric.mean, 1)} unit="minutes" icon="⏱️" color="#f59e0b" />
@@ -129,7 +172,12 @@ const DashboardSection = ({ filters = {}, datasetVersion = 0 }) => {
             </section>
 
             <section className="details-section">
-              <h2 className="section-title">Detailed Statistics</h2>
+              <div className="section-header">
+                <h2 className="section-title">Detailed Statistics</h2>
+                {stationLabel && (
+                  <p className="section-station-label">📍 Station: {stationLabel}</p>
+                )}
+              </div>
               <div className="stats-grid">
                 <div className="stat-card">
                   <div className="stat-card-header">
