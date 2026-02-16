@@ -921,14 +921,6 @@ async def upload_data(
 
     # Handle "full" mode - both stations and ZIP files
     if mode == "full":
-        if stations_file:
-            if not (stations_file.filename or "").lower().endswith(".csv"):
-                raise HTTPException(status_code=400, detail="Stations file must be .csv")
-            stations_path = STATIONS_CSV_PATH
-            with open(stations_path, "wb") as out:
-                shutil.copyfileobj(stations_file.file, out)
-            upload_stats["stations_uploaded"] = True
-
         if zip_file:
             if not (zip_file.filename or "").lower().endswith(".zip"):
                 raise HTTPException(status_code=400, detail="ZIP file must be .zip")
@@ -959,6 +951,15 @@ async def upload_data(
                         "start": train_dates[0],
                         "end": train_dates[-1]
                     }
+
+        # Write stations.csv AFTER archiving/copying ZIP contents so it remains active.
+        if stations_file:
+            if not (stations_file.filename or "").lower().endswith(".csv"):
+                raise HTTPException(status_code=400, detail="Stations file must be .csv")
+            stations_path = STATIONS_CSV_PATH
+            with open(stations_path, "wb") as out:
+                shutil.copyfileobj(stations_file.file, out)
+            upload_stats["stations_uploaded"] = True
 
         if not stations_file and not zip_file:
             raise HTTPException(status_code=400, detail="At least one file (stations or ZIP) required")
@@ -1573,9 +1574,42 @@ def get_stations(
         features: List[Dict[str, Any]] = []
         seen = set()
 
+        def _norm_row(row: Dict[str, str]) -> Dict[str, str]:
+            out: Dict[str, str] = {}
+            for k, v in (row or {}).items():
+                if k is None:
+                    continue
+                key = str(k).strip().lower()
+                out[key] = "" if v is None else str(v)
+            return out
+
+        def _get(row: Dict[str, str], *keys: str) -> str:
+            for key in keys:
+                if not key:
+                    continue
+                v = row.get(key)
+                if v is not None:
+                    return str(v)
+            return ""
+
+        def _parse_coord(raw: str) -> Optional[float]:
+            s = (raw or "").strip()
+            if not s:
+                return None
+            # Handle common European decimal comma.
+            if "," in s and "." not in s:
+                s = s.replace(",", ".")
+            # Strip degree sign if present.
+            s = s.replace("°", "").strip()
+            try:
+                return float(s)
+            except ValueError:
+                return None
+
         for row in _read_csv_rows(path):
-            code = (row.get("code") or "").strip()
-            region = (row.get("region") or "").strip()
+            r = _norm_row(row)
+            code = _get(r, "code", "station_code", "stationcode", "codice", "id").strip()
+            region = _get(r, "region", "region_code", "regione").strip()
 
             region_code: Optional[int] = None
             if region != "":
@@ -1585,23 +1619,21 @@ def get_stations(
                     region_code = None
             region_name = REGION_CODE_TO_NAME.get(region_code) if region_code else None
 
-            long_name = (row.get("long_name") or row.get("longName") or row.get("name") or "").strip()
-            short_name = (row.get("short_name") or row.get("shortName") or "").strip()
+            long_name = _get(r, "long_name", "longname", "name", "nome", "denominazione").strip()
+            short_name = _get(r, "short_name", "shortname", "short", "abbr", "abbrev").strip()
 
             # Prefer long_name for display; fall back to short_name or code.
             display_name = long_name or short_name or code
 
-            lat_raw = (row.get("latitude") or row.get("lat") or "").strip()
-            lon_raw = (row.get("longitude") or row.get("lon") or "").strip()
+            lat_raw = _get(r, "latitude", "lat", "latitudine").strip()
+            lon_raw = _get(r, "longitude", "lon", "lng", "longitudine").strip()
 
             geometry = None
             if lat_raw and lon_raw:
-                try:
-                    lat = float(lat_raw)
-                    lon = float(lon_raw)
+                lat = _parse_coord(lat_raw)
+                lon = _parse_coord(lon_raw)
+                if lat is not None and lon is not None and (-90.0 <= lat <= 90.0) and (-180.0 <= lon <= 180.0):
                     geometry = {"type": "Point", "coordinates": [lon, lat]}
-                except ValueError:
-                    geometry = None
 
             # Deduplicate common repeats (station codes are not globally unique, but this helps the UI).
             dedupe_key = (code, display_name, short_name, region)

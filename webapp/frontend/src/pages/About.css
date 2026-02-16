@@ -1,11 +1,24 @@
 /* About Page Styles */
 .about {
   width: 100%;
+  padding: 8px 0 28px;
 }
 
 .about-container {
   max-width: 1200px;
   margin: 0 auto;
+  padding: 0 16px;
+}
+
+.about-features-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 18px;
+}
+
+.about-features-grid .about-section {
+  margin-bottom: 0;
+  height: 100%;
 }
 
 .about-header {
@@ -22,6 +35,7 @@
   margin: 0;
   font-size: 16px;
   color: #6b7280;
+  max-width: 80ch;
 }
 
 .about-section {
@@ -29,19 +43,32 @@
   border-radius: 8px;
   padding: 20px;
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+  border: 1px solid #e5e7eb;
   margin-bottom: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
 }
 
 .about-section h2 {
   margin: 0 0 12px 0;
   font-size: 18px;
   color: #1f2937;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  line-height: 1.25;
+}
+
+.about-section h2 {
+  margin-bottom: 6px;
 }
 
 .about-section p {
   margin: 0 0 10px 0;
   color: #374151;
   line-height: 1.6;
+  max-width: 95ch;
 }
 
 .about-section p:last-child {
@@ -55,8 +82,42 @@
   line-height: 1.8;
 }
 
+.about-section ul li::marker {
+  color: #6b7280;
+}
+
+.about-section li {
+  margin-bottom: 6px;
+}
+
+.about-section li:last-child {
+  margin-bottom: 0;
+}
+
+.about-section code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+  font-size: 0.95em;
+  padding: 2px 6px;
+  border-radius: 6px;
+  background: rgba(31, 41, 55, 0.06);
+  border: 1px solid rgba(31, 41, 55, 0.12);
+  color: #1f2937;
+  overflow-wrap: anywhere;
+}
+
 @media (max-width: 768px) {
   .about-header h1 {
     font-size: 24px;
+  }
+}
+
+@media (min-width: 980px) {
+  .about-features-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    align-items: stretch;
+  }
+
+  .about-section h2 {
+    min-height: 44px;
   }
 }

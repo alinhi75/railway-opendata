@@ -211,17 +211,30 @@ function getRegionStationIcon(color) {
   });
 }
 
-function AutoZoomToStation({ feature }) {
+function AutoZoomToStation({ feature, selectionCount = 0 }) {
   const map = useMap();
   const hadStationRef = useRef(false);
 
   useEffect(() => {
     if (!feature?.geometry?.coordinates) {
+      // Only reset when selection was cleared (0). If user selected multiple stations,
+      // we keep the current view and just ensure no popup stays open.
+      if (selectionCount > 0) {
+        map.closePopup();
+        return;
+      }
+
       if (hadStationRef.current) {
         hadStationRef.current = false;
         map.closePopup();
         map.flyTo(ITALY_CENTER, 6, { duration: 0.9, easeLinearity: 0.25 });
       }
+      return;
+    }
+
+    // Auto-focus only when exactly one station is selected.
+    if (selectionCount !== 1) {
+      map.closePopup();
       return;
     }
 
@@ -234,7 +247,7 @@ function AutoZoomToStation({ feature }) {
       duration: 1.2,
       easeLinearity: 0.25,
     });
-  }, [feature, map]);
+  }, [feature, map, selectionCount]);
 
   return null;
 }
@@ -340,6 +353,7 @@ const MapSection = ({ filters = {}, datasetVersion = 0 }) => {
 
   const showRegionPolygons = regionFeatureGroups.length > 0 && selectedStationFeatures.length === 0;
   const showAllStations = selectedStationFeatures.length === 0;
+  const shouldAutoOpenSelectedPopup = selectedStationFeatures.length === 1;
 
   return (
     <div className="map-page">
@@ -368,12 +382,16 @@ const MapSection = ({ filters = {}, datasetVersion = 0 }) => {
                   key={`selected-${code}`} 
                   position={[lat, lng]} 
                   icon={selectedStationIcon}
-                  eventHandlers={{
-                    add: (e) => {
-                      // Auto-open popup when marker is added
-                      setTimeout(() => e.target.openPopup(), 400);
-                    }
-                  }}
+                  eventHandlers={
+                    shouldAutoOpenSelectedPopup
+                      ? {
+                          add: (e) => {
+                            // Auto-open popup only for single-station selection.
+                            setTimeout(() => e.target.openPopup(), 400);
+                          },
+                        }
+                      : undefined
+                  }
                 >
                   <Popup 
                     maxWidth={360} 
@@ -438,7 +456,7 @@ const MapSection = ({ filters = {}, datasetVersion = 0 }) => {
                   />
                 ))}
 
-            <AutoZoomToStation feature={selectedStationFeatures[0]} />
+            <AutoZoomToStation feature={selectedStationFeatures[0]} selectionCount={selectedStationFeatures.length} />
             <AutoFitToRegions bounds={regionsBounds} enabled={showRegionPolygons && selectedStationFeatures.length === 0} />
           </MapContainer>
         </div>

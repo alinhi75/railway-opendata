@@ -28,10 +28,11 @@ const StatisticsSection = ({ filters = {}, datasetVersion = 0 }) => {
   const customStartInputRef = useRef(null);
   const customEndInputRef = useRef(null);
 
-  // Extract selected station code from filters
-  const selectedStationCode = Array.isArray(filters.stationCodes) && filters.stationCodes.length > 0
-    ? filters.stationCodes[0]
-    : filters.stationCode || null;
+  // Extract selected station code from filters.
+  // If multiple stations are selected, don't implicitly choose one.
+  const selectedStationCode = Array.isArray(filters.stationCodes)
+    ? (filters.stationCodes.length === 1 ? filters.stationCodes[0] : null)
+    : (filters.stationCode || null);
 
   const isStationSpecificAnalysis = viewMode === 'custom' && Boolean(selectedStationCode);
   const stationLabel =

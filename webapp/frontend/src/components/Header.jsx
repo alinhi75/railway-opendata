@@ -102,14 +102,6 @@ const Header = () => {
         {/* Navigation Menu */}
         <nav className={`nav ${isMenuOpen ? 'open' : ''}`} aria-label="Primary">
           <a
-            href="#dashboard"
-            className={`nav-link ${activeSection === 'dashboard' ? 'active' : ''}`}
-            aria-current={activeSection === 'dashboard' ? 'page' : undefined}
-            onClick={() => setIsMenuOpen(false)}
-          >
-            📊 Dashboard
-          </a>
-          <a
             href="#map"
             className={`nav-link ${activeSection === 'map' ? 'active' : ''}`}
             aria-current={activeSection === 'map' ? 'page' : undefined}
@@ -117,6 +109,15 @@ const Header = () => {
           >
             🗺️ Map
           </a>
+          <a
+            href="#dashboard"
+            className={`nav-link ${activeSection === 'dashboard' ? 'active' : ''}`}
+            aria-current={activeSection === 'dashboard' ? 'page' : undefined}
+            onClick={() => setIsMenuOpen(false)}
+          >
+            📊 Dashboard
+          </a>
+          
           <a
             href="#statistics"
             className={`nav-link ${activeSection === 'statistics' ? 'active' : ''}`}

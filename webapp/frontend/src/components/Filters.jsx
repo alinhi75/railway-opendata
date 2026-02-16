@@ -351,6 +351,11 @@ const Filters = ({ onChange, onDatasetApplied, initialFilters = {} }) => {
   };
 
   const applyStationSelection = () => {
+    // Hide suggestions dropdown when applying selection
+    setDropdownOpen(false);
+    setMouseOverSuggestions(false);
+    mouseDownOnSuggestions.current = false;
+
     const stationCodes = selectedStations.map((s) => s.code).filter(Boolean);
     const next = { ...appliedFiltersRef.current };
     if (stationCodes.length > 0) {
@@ -1092,7 +1097,7 @@ const Filters = ({ onChange, onDatasetApplied, initialFilters = {} }) => {
                   disabled={reverting || archives.length === 0}
                   title="Restore with backup (saves current as archive)"
                 >
-                  {reverting ? 'Restoring...' : '↩️ Restore'}
+                  {reverting ? 'Restoring...' : '↩️ Restore to default dataset'}
                 </button>
                 {archives.length > 0 && (
                   <button
@@ -1158,7 +1163,7 @@ const Filters = ({ onChange, onDatasetApplied, initialFilters = {} }) => {
             onClick={closeUploadModal}
           ></div>
           <div
-            className="modal-dialog"
+            className="modal-dialog upload-modal-dialog"
             role="dialog"
             aria-modal="true"
             aria-labelledby="upload-modal-title"
