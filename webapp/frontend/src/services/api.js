@@ -153,21 +153,13 @@ export const apiService = {
 
   /**
    * Get available regions for filtering (US-9)
+   * Fetches all 20 Italian regions from the backend
    */
-  getRegions: () => {
-    return Promise.resolve({
-      data: [
-        'Lombardia',
-        'Emilia-Romagna',
-        'Piemonte',
-        'Veneto',
-        'Toscana',
-        'Lazio',
-        'Campania',
-        'Sicilia',
-        'Puglia',
-      ],
-    });
+  getRegions: async () => {
+    const response = await api.get('/meta/regions');
+    return {
+      data: response.data.regions || [],
+    };
   },
 };
 
