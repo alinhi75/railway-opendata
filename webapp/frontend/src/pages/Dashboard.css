@@ -95,9 +95,10 @@
 
 .section-header {
   display: flex;
+  flex-direction: column;
   align-items: flex-start;
-  justify-content: space-between;
-  gap: 16px;
+  justify-content: flex-start;
+  gap: 8px;
   margin-bottom: 24px;
   flex-wrap: wrap;
 }
@@ -108,7 +109,7 @@
 
 .section-station-label {
   font-size: 13px;
-  color: #4f46e5;
+  color: #000;
   font-weight: 600;
   padding: 6px 10px;
   background: #eef2ff;

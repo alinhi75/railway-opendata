@@ -214,7 +214,13 @@ const StatisticsSection = ({ filters = {}, datasetVersion = 0 }) => {
 
         setError(null);
       } catch (err) {
-        setError('Failed to load statistics. Make sure the backend is running.');
+        const detail = err?.response?.data?.detail;
+        const msg =
+          (typeof detail === 'string' ? detail : null) ||
+          (detail && typeof detail === 'object' && typeof detail.message === 'string' ? detail.message : null) ||
+          err?.message ||
+          'Failed to load statistics.';
+        setError(msg);
         console.error(err);
       } finally {
         setLoading(false);
@@ -406,20 +412,20 @@ const StatisticsSection = ({ filters = {}, datasetVersion = 0 }) => {
         <div className="charts-grid">
           <div className="chart-card">
             <div className="chart-header">
-              <h2>📉 Delay Distribution</h2>
+              <h2>📉 Early/Late (vs schedule) distribution</h2>
               {isStationSpecificAnalysis && stationLabel && (
                 <p className="chart-station-label">📍 Station: {stationLabel}</p>
               )}
-              <p className="chart-description">Delay patterns at last stop for each train. Shows median, quartiles, and outliers.</p>
+              <p className="chart-description">Early/late vs schedule at last stop for each train. Shows median, quartiles, and outliers.</p>
             </div>
             <div className="chart-content">
               {delayBoxplotPath === 'NOT_IMPLEMENTED' ? (
                 <div className="stat-placeholder">
                   <span className="placeholder-icon">🚫</span>
-                  <p>Live delay boxplot is not available from the public API.</p>
+                  <p>Live early/late (vs schedule) boxplot is not available from the public API.</p>
                 </div>
               ) : delayBoxplotPath ? (
-                <img src={delayBoxplotPath} alt="Delay Boxplot" className="stat-img" />
+                <img src={delayBoxplotPath} alt="Early/Late (vs schedule) Boxplot" className="stat-img" />
               ) : (
                 <div className="stat-placeholder">
                   <span className="placeholder-icon">📭</span>

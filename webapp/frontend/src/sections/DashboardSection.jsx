@@ -69,7 +69,13 @@ const DashboardSection = ({ filters = {}, datasetVersion = 0 }) => {
         setStats(response.data);
         setError(null);
       } catch (err) {
-        setError('Failed to load statistics. Make sure the backend is running.');
+        const detail = err?.response?.data?.detail;
+        const msg =
+          (typeof detail === 'string' ? detail : null) ||
+          (detail && typeof detail === 'object' && typeof detail.message === 'string' ? detail.message : null) ||
+          err?.message ||
+          'Failed to load statistics.';
+        setError(msg);
         console.error(err);
       } finally {
         setLoading(false);
@@ -130,7 +136,7 @@ const DashboardSection = ({ filters = {}, datasetVersion = 0 }) => {
       <div className="dashboard-container">
         <div className="dashboard-header">
           <div className="header-content">
-            <h1>tation📊 Railway Performance Dashboard</h1>
+            <h1>📊 Railway Performance Dashboard</h1>
             <p className="header-subtitle">Real-time insights into Italian railway system performance</p>
           </div>
         </div>
@@ -165,9 +171,9 @@ const DashboardSection = ({ filters = {}, datasetVersion = 0 }) => {
               </div>
               <div className="summary-grid">
                 <SummaryCard title="Total Records" value={formatCount(metric.count)} unit="trains" icon="🚂" color="#667eea" />
-                <SummaryCard title="Average Delay" value={formatNumber(metric.mean, 1)} unit="minutes" icon="⏱️" color="#f59e0b" />
+                <SummaryCard title="Avg Early/Late" value={formatNumber(metric.mean, 1)} unit="minutes" icon="⏱️" color="#f59e0b" />
                 <SummaryCard title="Std Deviation" value={formatNumber(metric.std, 1)} unit="minutes" icon="📉" color="#ef4444" />
-                <SummaryCard title="Max Delay" value={formatNumber(metric.max, 1)} unit="minutes" icon="🚨" color="#10b981" />
+                <SummaryCard title="Max Early/Late" value={formatNumber(metric.max, 1)} unit="minutes" icon="🚨" color="#10b981" />
               </div>
             </section>
 
@@ -181,8 +187,8 @@ const DashboardSection = ({ filters = {}, datasetVersion = 0 }) => {
               <div className="stats-grid">
                 <div className="stat-card">
                   <div className="stat-card-header">
-                    <h3>📊 Delay Analysis</h3>
-                    <span className="stat-badge">Arrival Delays</span>
+                    <h3>📊 Early/Late (vs schedule)</h3>
+                    <span className="stat-badge">Arrival vs schedule</span>
                   </div>
                   <div className="stat-rows">
                     <div className="stat-row">
@@ -213,7 +219,7 @@ const DashboardSection = ({ filters = {}, datasetVersion = 0 }) => {
                       <div className="insight-icon">✅</div>
                       <div className="insight-text">
                         <strong>On-Time Rate</strong>
-                        <p>Delays under 5 minutes considered on-time</p>
+                          <p>Early/late within 5 minutes considered on-time</p>
                       </div>
                     </div>
                     <div className="insight-item">

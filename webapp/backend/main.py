@@ -92,6 +92,7 @@ MAX_RANGE_DAYS = 366
 # In-memory cache for station index (to support region/station filtering).
 _STATIONS_CACHE: Dict[str, Any] = {"mtime": None, "by_code": None, "codes_by_region_name": None}
 _TRAINSTATS_STATION_CACHE: Dict[str, Any] = {"ts": None, "by_norm": None, "list": None}
+_TRAINSTATS_REL_DEST_CACHE: Dict[str, Any] = {"ts": {}, "by_origin": {}}
 
 
 def _read_csv_rows(path: Path) -> Iterable[Dict[str, str]]:
@@ -125,6 +126,19 @@ def _validate_range(s: date, e: date, max_days: int = MAX_RANGE_DAYS) -> None:
             status_code=400,
             detail=f"Date range too large ({(e - s).days} days). Max allowed is {max_days} days.",
         )
+
+
+def _clamp_requested_range_to_available(s: date, e: date) -> tuple[date, date, bool, date, date]:
+    """Clamp a requested date range to the locally available dataset range.
+
+    The raw dataset is stored as folders under webapp/data/YYYY-MM-DD. The API previously
+    accepted ranges that extended beyond what exists on disk and would silently return
+    partial data, which made charts appear to "stop" early.
+    """
+    min_d, max_d = _infer_available_date_range()
+    clamped_s = max(s, min_d)
+    clamped_e = min(e, max_d)
+    return clamped_s, clamped_e, (clamped_s != s or clamped_e != e), min_d, max_d
 
 
 def _infer_available_date_range() -> tuple[date, date]:
@@ -1080,13 +1094,16 @@ def get_describe_stats(
     Reads `webapp/data/YYYY-MM-DD/trains.csv` and computes describe() on numeric fields.
     Returns a backward-compatible summary at top-level for the dashboard.
     """
+    requested_s: Optional[date] = None
+    requested_e: Optional[date] = None
+
     # Determine the date range
     if start_date and end_date:
-        s = _parse_iso_date(start_date)
-        e = _parse_iso_date(end_date)
+        requested_s = _parse_iso_date(start_date)
+        requested_e = _parse_iso_date(end_date)
+        s = requested_s
+        e = requested_e
         used_default_window = False
-        available_min = None
-        available_max = None
     elif start_date or end_date:
         raise HTTPException(status_code=400, detail="Provide both start_date and end_date, or neither")
     else:
@@ -1101,6 +1118,17 @@ def get_describe_stats(
         s = max(available_min_d, available_max_d.replace() - __import__("datetime").timedelta(days=(default_window_days - 1)))
         e = available_max_d
         used_default_window = True
+
+    # Clamp to the available dataset range to avoid silently returning partial data.
+    clamped_to_available_range = False
+    try:
+        s, e, clamped_to_available_range, min_d, max_d = _clamp_requested_range_to_available(s, e)
+        available_min = min_d.isoformat()
+        available_max = max_d.isoformat()
+    except Exception:
+        # If inferring available range fails, fall back to requested/default values.
+        min_d = None
+        max_d = None
 
     # Keep describe bounded to avoid hanging the UI.
     _validate_range(s, e, max_days=366)
@@ -1172,6 +1200,9 @@ def get_describe_stats(
         "available_max_date": available_max,
         "used_default_window": used_default_window,
         "default_window_days": default_window_days if used_default_window else None,
+        "requested_start_date": requested_s.isoformat() if requested_s else None,
+        "requested_end_date": requested_e.isoformat() if requested_e else None,
+        "clamped_to_available_range": bool(clamped_to_available_range) if (requested_s and requested_e) else False,
         "start_date": s.isoformat(),
         "end_date": e.isoformat(),
         "column": preferred_col,
@@ -1215,10 +1246,15 @@ def get_delay_boxplot(
             boxplot_file = sorted(boxplot_files)[-1]
             return {"file_path": f"/files/{boxplot_file.name}", "filename": boxplot_file.name}
 
+    requested_s: Optional[date] = None
+    requested_e: Optional[date] = None
+
     # Determine date range
     if start_date and end_date:
-        s = _parse_iso_date(start_date)
-        e = _parse_iso_date(end_date)
+        requested_s = _parse_iso_date(start_date)
+        requested_e = _parse_iso_date(end_date)
+        s = requested_s
+        e = requested_e
     elif start_date or end_date:
         raise HTTPException(status_code=400, detail="Provide both start_date and end_date, or neither")
     else:
@@ -1230,6 +1266,16 @@ def get_delay_boxplot(
             available_max_d.replace() - __import__("datetime").timedelta(days=(default_window_days - 1)),
         )
         e = available_max_d
+
+    clamped_to_available_range = False
+    available_min = None
+    available_max = None
+    try:
+        s, e, clamped_to_available_range, min_d, max_d = _clamp_requested_range_to_available(s, e)
+        available_min = min_d.isoformat()
+        available_max = max_d.isoformat()
+    except Exception:
+        pass
 
     _validate_range(s, e)
 
@@ -1248,7 +1294,17 @@ def get_delay_boxplot(
     out_png = RUNTIME_DIR / f"delay_boxplot_{s.isoformat()}_{e.isoformat()}_{suffix}.png"
 
     if (not recompute) and out_png.exists():
-        return {"file_path": f"/files/runtime/{out_png.name}", "filename": out_png.name}
+        return {
+            "file_path": f"/files/runtime/{out_png.name}",
+            "filename": out_png.name,
+            "requested_start_date": requested_s.isoformat() if requested_s else None,
+            "requested_end_date": requested_e.isoformat() if requested_e else None,
+            "start_date": s.isoformat(),
+            "end_date": e.isoformat(),
+            "available_min_date": available_min,
+            "available_max_date": available_max,
+            "clamped_to_available_range": bool(clamped_to_available_range) if (requested_s and requested_e) else False,
+        }
 
     import pandas as pd
     import seaborn as sns
@@ -1295,12 +1351,26 @@ def get_delay_boxplot(
     sns.set_theme(style="whitegrid")
     plt.figure(figsize=(10, 6))
     ax = sns.boxplot(x="variable", y="value", data=melt, showfliers=False)
-    ax.set(xlabel="Variable", ylabel="Delay (minutes)", title=f"Delay boxplot (last stop) {s.isoformat()} → {e.isoformat()}")
+    ax.set(
+        xlabel="Variable",
+        ylabel="Minutes (early/late)",
+        title=f"Early/Late vs schedule (last stop) {s.isoformat()} → {e.isoformat()}",
+    )
     plt.tight_layout()
     plt.savefig(out_png)
     plt.close()
 
-    return {"file_path": f"/files/runtime/{out_png.name}", "filename": out_png.name}
+    return {
+        "file_path": f"/files/runtime/{out_png.name}",
+        "filename": out_png.name,
+        "requested_start_date": requested_s.isoformat() if requested_s else None,
+        "requested_end_date": requested_e.isoformat() if requested_e else None,
+        "start_date": s.isoformat(),
+        "end_date": e.isoformat(),
+        "available_min_date": available_min,
+        "available_max_date": available_max,
+        "clamped_to_available_range": bool(clamped_to_available_range) if (requested_s and requested_e) else False,
+    }
 
 
 @app.get("/stats/day-train-count/monthly")
@@ -1398,10 +1468,15 @@ def get_day_train_count(
     Get daily train count data (US-3: Service Frequency)
     Returns path to precomputed PNG from day_train_count_fast.py
     """
+    requested_s: Optional[date] = None
+    requested_e: Optional[date] = None
+
     # Determine date range
     if start_date and end_date:
-        s = _parse_iso_date(start_date)
-        e = _parse_iso_date(end_date)
+        requested_s = _parse_iso_date(start_date)
+        requested_e = _parse_iso_date(end_date)
+        s = requested_s
+        e = requested_e
     elif start_date or end_date:
         raise HTTPException(status_code=400, detail="Provide both start_date and end_date, or neither")
     else:
@@ -1413,6 +1488,16 @@ def get_day_train_count(
             available_max_d.replace() - __import__("datetime").timedelta(days=(default_window_days - 1)),
         )
         e = available_max_d
+
+    clamped_to_available_range = False
+    available_min = None
+    available_max = None
+    try:
+        s, e, clamped_to_available_range, min_d, max_d = _clamp_requested_range_to_available(s, e)
+        available_min = min_d.isoformat()
+        available_max = max_d.isoformat()
+    except Exception:
+        pass
 
     _validate_range(s, e)
 
@@ -1431,7 +1516,17 @@ def get_day_train_count(
     out_png = RUNTIME_DIR / f"day_train_count_{s.isoformat()}_{e.isoformat()}_{suffix}.png"
 
     if (not recompute) and out_png.exists():
-        return {"file_path": f"/files/runtime/{out_png.name}", "filename": out_png.name}
+        return {
+            "file_path": f"/files/runtime/{out_png.name}",
+            "filename": out_png.name,
+            "requested_start_date": requested_s.isoformat() if requested_s else None,
+            "requested_end_date": requested_e.isoformat() if requested_e else None,
+            "start_date": s.isoformat(),
+            "end_date": e.isoformat(),
+            "available_min_date": available_min,
+            "available_max_date": available_max,
+            "clamped_to_available_range": bool(clamped_to_available_range) if (requested_s and requested_e) else False,
+        }
 
     import pandas as pd
     import seaborn as sns
@@ -1491,7 +1586,17 @@ def get_day_train_count(
     plt.savefig(out_png)
     plt.close()
 
-    return {"file_path": f"/files/runtime/{out_png.name}", "filename": out_png.name}
+    return {
+        "file_path": f"/files/runtime/{out_png.name}",
+        "filename": out_png.name,
+        "requested_start_date": requested_s.isoformat() if requested_s else None,
+        "requested_end_date": requested_e.isoformat() if requested_e else None,
+        "start_date": s.isoformat(),
+        "end_date": e.isoformat(),
+        "available_min_date": available_min,
+        "available_max_date": available_max,
+        "clamped_to_available_range": bool(clamped_to_available_range) if (requested_s and requested_e) else False,
+    }
 
 
 # --- LIVE DATA VERSION: No direct API for trajectories, return error or placeholder ---
@@ -2240,15 +2345,40 @@ def get_external_relation(
 
         def _fetch_relation_destinations(origin_name: str) -> List[str]:
             try:
+                import time
+
+                origin_key = (origin_name or "").strip().upper()
+                if not origin_key:
+                    return []
+
+                cache = _TRAINSTATS_REL_DEST_CACHE
+                ts_map = cache.get("ts") or {}
+                by_origin = cache.get("by_origin") or {}
+                now = time.time()
+                ts = ts_map.get(origin_key)
+                cached = by_origin.get(origin_key)
+                if ts and cached is not None and (now - ts) < 21600:
+                    return list(cached)
+
                 rel_url = "https://trainstats.altervista.org/libs/getRelazioniByCodStazione.php"
-                query_url = f"{rel_url}?staz={quote(origin_name.upper())}"
+                query_url = f"{rel_url}?staz={quote(origin_key)}"
                 resp = session.get(query_url, timeout=10)
                 if resp.status_code != 200:
                     return []
                 text = (resp.text or "").strip()
-                if len(text) <= 1:
+
+                lowered = text.lower()
+                if "fatal error" in lowered or "thrown in" in lowered or "<br" in lowered or "<b>" in lowered or "<!doctype" in lowered or "<html" in lowered:
                     return []
+
+                if len(text) <= 1:
+                    cache.setdefault("by_origin", {})[origin_key] = []
+                    cache.setdefault("ts", {})[origin_key] = now
+                    return []
+
                 parts = [p.strip() for p in text.split(";") if p and p.strip()]
+                cache.setdefault("by_origin", {})[origin_key] = parts
+                cache.setdefault("ts", {})[origin_key] = now
                 return parts
             except Exception:
                 return []
@@ -2418,6 +2548,19 @@ def get_external_relation_destinations(staz: str):
     if not origin:
         raise HTTPException(status_code=400, detail="Origin station is required")
 
+    # Cache: destinations change slowly; avoid repeated hits on TrainStats.
+    try:
+        import time
+
+        origin_key = origin.upper()
+        cache = _TRAINSTATS_REL_DEST_CACHE
+        ts = (cache.get("ts") or {}).get(origin_key)
+        cached = (cache.get("by_origin") or {}).get(origin_key)
+        if ts and cached is not None and (time.time() - ts) < 21600:
+            return {"origin": origin, "destinations": list(cached), "cached": True}
+    except Exception:
+        pass
+
     try:
         import requests
         from urllib.parse import quote
@@ -2434,9 +2577,30 @@ def get_external_relation_destinations(staz: str):
         if resp.status_code != 200:
             raise HTTPException(status_code=502, detail="Failed to load TrainStats relation list")
         text = (resp.text or "").strip()
+
+        # TrainStats sometimes responds with HTML/PHP errors while still returning HTTP 200.
+        # Avoid leaking raw HTML into the UI autocomplete.
+        lowered = text.lower()
+        if "fatal error" in lowered or "thrown in" in lowered or "<br" in lowered or "<b>" in lowered or "<!doctype" in lowered or "<html" in lowered:
+            raise HTTPException(status_code=502, detail="TrainStats relation list returned an error")
+
         if len(text) <= 1:
             return {"origin": origin, "destinations": []}
+
         destinations = sorted({p.strip() for p in text.split(";") if p and p.strip()})
+
+        # Cache for a few hours to keep typeahead fast.
+        try:
+            import time
+
+            cache = _TRAINSTATS_REL_DEST_CACHE
+            now = time.time()
+            origin_key = origin.upper()
+            cache.setdefault("by_origin", {})[origin_key] = destinations
+            cache.setdefault("ts", {})[origin_key] = now
+        except Exception:
+            pass
+
         return {"origin": origin, "destinations": destinations}
     except HTTPException:
         raise

@@ -29,8 +29,8 @@ const AboutSection = () => {
           <section className="about-section">
             <h2>📊 Analysis (Dashboard & Statistics)</h2>
             <ul>
-              <li><strong>Dashboard</strong> summarizes the current filters (records, average delay, variability, extremes).</li>
-              <li><strong>Statistics</strong> shows delay distributions (boxplots) and daily train counts.</li>
+              <li><strong>Dashboard</strong> summarizes the current filters (records, average early/late, variability, extremes).</li>
+              <li><strong>Statistics</strong> shows early/late distributions (boxplots) and daily train counts.</li>
               <li><strong>Monthly</strong> view uses precomputed charts; <strong>Custom</strong> view uses your selected filters and date range.</li>
             </ul>
           </section>

@@ -39,6 +39,7 @@ const Filters = ({ onChange, onDatasetApplied, initialFilters = {} }) => {
   const [relationResults, setRelationResults] = useState([]);
   const [relationLoading, setRelationLoading] = useState(false);
   const [relationError, setRelationError] = useState(null);
+  const [lastRelationKey, setLastRelationKey] = useState(null);
   const [selectedRelationIndex, setSelectedRelationIndex] = useState(null);
   const [relationDetail, setRelationDetail] = useState(null);
   const [relationDetailLoading, setRelationDetailLoading] = useState(false);
@@ -498,6 +499,7 @@ const Filters = ({ onChange, onDatasetApplied, initialFilters = {} }) => {
     setRelationToOpen(false);
     setRelationResults([]);
     setRelationError(null);
+    setLastRelationKey(null);
   };
 
   const closeRelationModal = () => {
@@ -514,12 +516,17 @@ const Filters = ({ onChange, onDatasetApplied, initialFilters = {} }) => {
     setRelationDetailError(null);
   };
 
-  const fetchRelationData = async () => {
+  const fetchRelationData = async ({ force = false } = {}) => {
     if (!relationFromStation || !relationToStation) return;
     const fromName = relationFromStation.name || relationFromQuery || relationFrom;
     const toName = relationToStation.name || relationToQuery || relationTo;
 
     if (!fromName || !toName) return;
+
+    const key = `${String(fromName).trim().toLowerCase()}__${String(toName).trim().toLowerCase()}`;
+    if (!force && key === lastRelationKey && relationResults.length > 0 && !relationError) {
+      return;
+    }
 
     try {
       setRelationLoading(true);
@@ -527,6 +534,7 @@ const Filters = ({ onChange, onDatasetApplied, initialFilters = {} }) => {
       setSelectedRelationIndex(null);
       const res = await apiService.getExternalRelation(fromName, toName);
       setRelationResults(res?.data?.rows || []);
+      setLastRelationKey(key);
     } catch (err) {
       const status = err?.response?.status;
       if (status === 404) {
@@ -534,7 +542,9 @@ const Filters = ({ onChange, onDatasetApplied, initialFilters = {} }) => {
         setRelationError('No relation data found for the selected stations.');
       } else {
         setRelationResults([]);
-        setRelationError('Failed to load relation data. Please try again.');
+        const detail = err?.response?.data?.detail;
+        const msg = (typeof detail === 'string' ? detail : null) || err?.message || 'Failed to load relation data. Please try again.';
+        setRelationError(msg);
       }
     } finally {
       setRelationLoading(false);
@@ -1470,7 +1480,7 @@ const Filters = ({ onChange, onDatasetApplied, initialFilters = {} }) => {
                 <div className="modal-title-icon">🔁</div>
                 <div>
                   <h3 className="modal-title" id="relation-modal-title">Station Relation</h3>
-                  <p className="modal-subtitle">Compare departures between selected stations.</p>
+                    <p className="modal-subtitle">Live comparison from TrainStats (not affected by local date filters).</p>
                 </div>
               </div>
               <div className="modal-body">
@@ -1501,7 +1511,7 @@ const Filters = ({ onChange, onDatasetApplied, initialFilters = {} }) => {
                         <div className="relation-modal-note">No relation data available yet.</div>
                       ) : (
                         <div className="relation-table-wrap">
-                          <div className="relation-table-hint">Click a row to load train details.</div>
+                          <div className="relation-table-hint">Click a row to load train details. Data source: trainstats.altervista.org.</div>
                           <table className="relation-table">
                             <thead>
                               <tr>
@@ -1513,7 +1523,7 @@ const Filters = ({ onChange, onDatasetApplied, initialFilters = {} }) => {
                                 <th>Destination</th>
                                 <th>Arr. Time</th>
                                 <th>Arr. Delay</th>
-                                <th>Track</th>
+                                <th>Platform</th>
                                 <th>Last Seen</th>
                               </tr>
                             </thead>
@@ -1554,7 +1564,7 @@ const Filters = ({ onChange, onDatasetApplied, initialFilters = {} }) => {
                 <button
                   className="btn btn-primary"
                   disabled={!relationFromStation || !relationToStation || relationLoading}
-                  onClick={fetchRelationData}
+                  onClick={() => fetchRelationData({ force: true })}
                 >
                   {relationLoading ? 'Loading…' : 'Run Comparison'}
                 </button>
@@ -1688,7 +1698,7 @@ const Filters = ({ onChange, onDatasetApplied, initialFilters = {} }) => {
 
                     {relationDetail.average_delay_by_day?.length > 0 && (
                       <div className="relation-detail-card detail-table-card">
-                        <div className="detail-card-title">Average delay by day</div>
+                        <div className="detail-card-title">Average early/late by day</div>
                         <div className="detail-table-wrap">
                           <table className="detail-table">
                             <thead>
