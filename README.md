@@ -29,13 +29,12 @@ The project is written in Python and it uses modern typing annotations, so **Pyt
 ### Using Docker (easy)
 
 A [Dockerfile](./Dockerfile) is available to avoid installing the dependencies manually.
-You can use the automatically updated [ghcr.io/marcobuster/railway-opendata:latest](https://github.com/MarcoBuster/railway-opendata/pkgs/container/railway-opendata)
-Docker image if you want the latest version available on the master branch.
+You can use a prebuilt Docker image from Docker Hub if you want the latest version available on the default branch.
 
 For instance, the following command will start the scraper on your machine.
 
 ```bash
-$ docker run -v ./data:/app/data ghcr.io/marcobuster/railway-opendata:latest scraper
+$ docker run -v ./data:/app/data <DOCKERHUB_NAMESPACE>/railway-opendata-cli:latest scraper
 ```
 
 ### Using virtual envs
