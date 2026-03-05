@@ -8,8 +8,7 @@ RUN python -m pip install --no-cache-dir --upgrade pip \
 
 COPY src ./src
 COPY webapp/backend ./webapp/backend
-# Optional: copy bundled data (can be overridden by volume in docker-compose)
-COPY webapp/data ./webapp/data
+RUN mkdir -p /app/webapp/data
 
 EXPOSE 8000
 

@@ -1,0 +1,18 @@
+services:
+  backend:
+    image: ${DOCKERHUB_NAMESPACE:-your-dockerhub-user}/railway-opendata-backend:${BACKEND_TAG:-latest}
+    ports:
+      - "8000:8000"
+    volumes:
+      # Mount local dataset folder so stats match the data you provide.
+      - ./data:/app/webapp/data
+    environment:
+      - PYTHONUNBUFFERED=1
+
+  frontend:
+    image: ${DOCKERHUB_NAMESPACE:-your-dockerhub-user}/railway-opendata-frontend:${FRONTEND_TAG:-latest}
+    ports:
+      # Keep the same port users already expect.
+      - "5173:80"
+    depends_on:
+      - backend

@@ -1,2 +1,26 @@
-data/*
-venv/*
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.venv/
+venv/
+
+# Git/Editor
+.git/
+.vscode/
+.DS_Store
+
+# Local outputs
+**/outputs/
+
+# Top-level data folder can be huge
+data/
+
+# Webapp dataset: exclude date folders and archives (mounted at runtime)
+webapp/data/20??-??-??/
+webapp/data/_archive/
+
+# Frontend deps/build
+webapp/frontend/node_modules/
+webapp/frontend/dist/

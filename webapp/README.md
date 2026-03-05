@@ -17,6 +17,22 @@ docker compose up --build
 
 Data must be present under `webapp/data/` (see backend section below).
 
+### Using Docker Hub images (no build)
+
+From the `webapp/` folder:
+
+```bash
+export DOCKERHUB_NAMESPACE=YOUR_DOCKERHUB_USER_OR_ORG
+export BACKEND_TAG=latest
+export FRONTEND_TAG=latest
+docker compose -f docker-compose.dockerhub.yml up
+```
+
+- Backend: http://localhost:8000
+- Frontend: http://localhost:5173
+
+The dataset is mounted from `webapp/data/` into the backend container.
+
 ### Using Docker (dev hot-reload)
 
 From the `webapp/` folder:
@@ -69,3 +85,20 @@ The backend reads the local dataset from:
 - `webapp/data/YYYY-MM-DD/trains.csv`
 
 If you only have the original repo `data/` folder, copy/sync the files into `webapp/data/` before running the webapp.
+
+## Publishing images to Docker Hub (GitHub Actions)
+
+This repo includes a workflow that builds and pushes multi-arch images:
+
+- `${DOCKERHUB_USERNAME}/railway-opendata-backend:<tag>`
+- `${DOCKERHUB_USERNAME}/railway-opendata-frontend:<tag>`
+
+Required GitHub repo secrets:
+
+- `DOCKERHUB_USERNAME`: Docker Hub namespace (user or org)
+- `DOCKERHUB_TOKEN`: Docker Hub access token with push permissions
+
+Trigger:
+
+- Push to `main` publishes `latest` and `sha-<7chars>` tags
+- Manual run (`workflow_dispatch`) can publish a custom tag
