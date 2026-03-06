@@ -102,3 +102,4 @@ Trigger:
 
 - Push to `main` publishes `latest` and `sha-<7chars>` tags
 - Manual run (`workflow_dispatch`) can publish a custom tag
+- Publishing a GitHub Release (e.g. tag `v1`) publishes the same Docker image tag (`v1`)
